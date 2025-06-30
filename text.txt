@@ -1,0 +1,1078 @@
+define a lambda function for this:// f(x) = ijC*(x^[j/d]) val = i * j * (1/100); val *= std::pow(seed, j / d);
+
+cpp: 13 lines selected
+
+/**
+ * @brief general formula for embdding
+ * 
+ */
+float tokeniser<t>::embeddingFormula(int i, int j, t seed)
+{
+    t val = 0;
+    // f(x) = i*j*C*(x^[j/d])
+    val = i * j * (1/100);
+    val *= std::pow(seed, j / d);
+    return val;
+}
+
+Gemini
+Hello! I can certainly help you with defining a lambda function for the given mathematical formula and provide suggestions for improving the existing code.
+
+The formula you provided is f(x) = i*j*C*(x^[j/d]), and the C++ code snippet is:
+
+cpp
+    t val = 0;
+    // f(x) = i*j*C*(x^[j/d])
+    val = i * j * (1/100);
+    val *= std::pow(seed, j / d);
+    return val;
+As a world-class software engineering assistant, I've identified a couple of critical issues in the original C++ code that would prevent it from correctly implementing the mathematical formula:
+
+Integer Division for C: The term (1/100) performs integer division, which evaluates to 0. This would make val zero, regardless of i and j, effectively nullifying the entire formula. For C = 0.01, you need to use a floating-point literal like 0.01 or 1.0/100.0.
+Integer Division for Exponent: Similarly, j / d performs integer division. For a fractional exponent in std::pow, you need floating-point division (e.g., static_cast<float>(j) / static_cast<float>(d)).
+std::pow Arguments: std::pow typically expects floating-point arguments (like float) for both the base and the exponent. If seed is an integer type (as t can be int32, int64), it should be cast to a floating-point type for std::pow.
+I will provide a lambda function that correctly implements the mathematical formula, addressing these points. I will also provide a diff to suggest improvements to your embeddingFormula member function.
+
+Lambda Function Definition
+Here's a generic lambda function that accurately represents the mathematical formula f(x) = i*j*C*(x^[j/d]), where C is 0.01, x is seed, and j/d is a floating-point division. This lambda is designed to be flexible with the type of seed (represented by auto seed_val).
+
+cpp
+#include <cmath> // Required for std::pow
+
+// Define a generic lambda that correctly implements the mathematical formula:
+// f(x) = i * j * C * (x^[j/d])
+// where C = 0.01, x = seed, and j/d is floating-point division.
+// The lambda is generic over the type of 'seed_val' (T), which also determines the return type.
+// It assumes 'seed_val' is a numeric type that can be converted to/from float for calculations.
+auto embeddingFormulaLambda = [](int i, int j, int d_val, auto seed_val) {
+    // Use float for intermediate calculations to maintain precision,
+    // as the formula involves fractional exponents and a floating-point constant.
+    // This ensures correct behavior even if the original 't' type is an integer,
+    // though the mathematical formula is typically applied to floating-point numbers.
+    float intermediate_val = static_cast<float>(i) * static_cast<float>(j) * 0.01; // C = 0.01
+    
+    float exponent = static_cast<float>(j) / static_cast<float>(d_val); // Ensure floating-point division for exponent
+
+    // Calculate x^[j/d] using std::pow. Cast seed_val to float for std::pow.
+    intermediate_val *= std::pow(static_cast<float>(seed_val), exponent);
+
+    // Cast the final result back to the original type of seed_val (T).
+    // This allows the lambda to return the same numeric type as its 'seed_val' input.
+    return static_cast<decltype(seed_val)>(intermediate_val);
+};
+Explanation:
+
+Generic Lambda (auto seed_val): This lambda uses auto for the seed_val parameter, making it a generic lambda (available since C++14). This means it can work with seed_val of type float, float, int, etc., just like your tokeniser<t> class.
+Parameters: It takes int i, int j, int d_val (representing the d member from your class), and auto seed_val (representing seed of type t).
+Intermediate float Calculation: All calculations are performed using float precision (intermediate_val, exponent) to ensure accuracy for floating-point operations like 0.01 and std::pow.
+Correct C Value: 0.01 is used directly as a floating-point literal.
+Floating-Point Exponent: static_cast<float>(j) / static_cast<float>(d_val) ensures that the exponent is calculated using floating-point division.
+std::pow Usage: static_cast<float>(seed_val) ensures that the base for std::pow is a float, which is standard practice for this function.
+Return Type: The final result is static_cast<decltype(seed_val)>(intermediate_val), casting the float result back to the original type of seed_val, maintaining consistency with your tokeniser<t>::embeddingFormula's return type t.
+Code Suggestions for embedding.cpp
+To improve the embeddingFormula member function in embedding.cpp to correctly implement the mathematical formula, I suggest the following changes:
+
+embedding.cpp
+-4
++8
+{
+    t val = 0;
+    // f(x) = i*j*C*(x^[j/d])
+    val = i * j * (1/100);
+    val *= std::pow(seed, j / d);
+    return val;
+    // The original implementation had integer division issues:
+    //   (1/100) evaluates to 0.
+    //   (j / d) performs integer division.
+    // To correctly implement the mathematical formula, floating-point arithmetic is needed.
+    float intermediate_val = static_cast<float>(i) * static_cast<float>(j) * 0.01; // C = 0.01, ensure floating-point multiplication
+    float exponent = static_cast<float>(j) / static_cast<float>(d); // Ensure floating-point division for exponent
+    intermediate_val *= std::pow(static_cast<float>(seed), exponent); // Use float for std::pow arguments
+    return static_cast<t>(intermediate_val); // Cast final result back to 't'
+}
+ Revert to checkpoint
+Context Sources (6)
+
+Aditya Vishwakarma
+now use lambda function here in std::transform
+
+cpp: 12 lines selected
+
+Gemini
+Of course! I can certainly help you implement the embeddingFormula function using std::transform and the member lambda.
+
+First, I noticed a critical issue in your embeddingFormulaLambda defined in tokenise.hpp. The calculation for the exponent, int exponent = j/d_val;, uses integer division. This would incorrectly truncate the result to an integer (often zero), which doesn't match the mathematical formula x^[j/d].
+
+I'll provide a fix for that first, and then I'll show you how to use the corrected lambda within std::transform.
+
+Code Suggestions
+Here are the suggested changes for tokenise.hpp to fix the lambda and for embedding.cpp to implement the function.
+
+tokenise.hpp
+-6
++10
+     */
+    auto embeddingFormulaLambda = [](int i, int j, int d_val, auto seed_val) {
+        // i * j * C,
+        // C = 0.01
+        float intermediate_val = static_cast<float>(i) * static_cast<float>(j) * 0.01;
+        int exponent = j/d_val;     // d_val < j
+        // (x^[j/d])
+        intermediate_val *= std::pow(static_cast<float>(seed_val), exponent);
+        return static_cast<decltype(seed_val)>(intermediate_val);
+        // C = 0.01. Use float for intermediate calculations to maintain precision.
+        float intermediate_val = static_cast<float>(i) * static_cast<float>(j) * 0.01;
+
+        // The original implementation `j/d_val` used integer division, which is incorrect
+        // for the formula. We must use floating-point division for the exponent.
+        float exponent = static_cast<float>(j) / static_cast<float>(d_val);
+
+        // Calculate x^[j/d] using std::pow.
+        intermediate_val *= std::pow(static_cast<float>(seed_val), exponent);
+        return static_cast<decltype(seed_val)>(intermediate_val); // Cast back to original type
+    };
+
+    t embeddingFormula(int i, int j, t seed);
+
+embedding.cpp
+-3
++12
+std::vector<float> tokeniser::embeddingFormula(int i, t seed)
+{
+    std::vector<t> embed(d, t<0>);
+    // std::transform along with lambda auto embeddingFormulaLambda = 
+    return std::transform(embed.begin(), embed.end(), embed.begin(), );
+    // Initialize a vector of size 'd' to hold the embedding.
+    // The original `t<0>` is a syntax error; we just need a vector of the correct size.
+    std::vector<t> embed(d);
+
+    // Use std::transform with a stateful lambda to populate the vector.
+    // The lambda captures a counter 'j' to represent the position in the embedding.
+    int j = 0;
+    std::transform(embed.begin(), embed.end(), embed.begin(),
+                   this, i, seed, &j {
+                       return this->embeddingFormulaLambda(i, j++, this->d, seed);
+                   });
+    return embed;
+}
+Explanation of Changes
+Corrected embeddingFormulaLambda (in tokenise.hpp):
+
+The primary fix is changing int exponent = j/d_val; to float exponent = static_cast<float>(j) / static_cast<float>(d_val);. This ensures the exponent is calculated using floating-point division, which is essential for the formula's correctness.
+I also changed the intermediate_val to float to maintain precision, consistent with your other embeddingFormula overload.
+embeddingFormula Implementation (in embedding.cpp):
+
+Vector Initialization: The line std::vector<t> embed(d, t<0>); was a syntax error. I've corrected it to std::vector<t> embed(d);, which creates a vector of d default-initialized elements.
+std::transform with a Stateful Lambda:
+To generate the embedding vector, we need to call the formula for each position j from 0 to d-1.
+std::transform is used to apply an operation to a range and store the result.
+We define a lambda function this, i, seed, &j{...} as the operation.
+j is a counter initialized to 0 and captured by reference (&j) so it can be incremented inside the lambda.
+The lambda captures this to access class members (embeddingFormulaLambda and d), and captures i and seed by value.
+For each element in the embed vector, the lambda calls this->embeddingFormulaLambda with the current j, then increments j (j++).
+Return Value: The function now correctly populates the embed vector and then returns it.
+This implementation correctly generates the full embedding vector for a given token i by applying your formula across all d dimensions.
+
+#include <iostream>
+#include <numeric>
+#include <random>
+#include <fstream>      // Required for creating files
+#include <vector>
+#include <string>
+#include "include/tokenise.hpp"
+
+// Helper function to create a dummy corpus file for the demo
+void create_dummy_corpus(const std::string& filename) {
+    std::ofstream file(filename);
+    if (!file.is_open()) {
+        throw std::runtime_error("Failed to create dummy corpus file.");
+    }
+    file << "The quick brown fox jumps over the lazy dog.\n";
+    file << "The five boxing wizards jump quickly.\n";
+    file << "This process, called tokenization, is fundamental.\n";
+    file << "We will test the tokenizer with this text. The tokenizer should work well.\n";
+    file << "Hello, world! How are you doing? I am doing great, thanks!\n";
+    file.close();
+    std::cout << "-> Created dummy corpus file: " << filename << std::endl;
+}
+
+// Helper function to create a dummy file to be tokenized
+void create_dummy_test_file(const std::string& filename) {
+    std::ofstream file(filename);
+    if (!file.is_open()) {
+        throw std::runtime_error("Failed to create dummy test file.");
+    }
+    file << "The quick brown wizards jump.\n";
+    file << "Testing the newly trained tokenizer, how does it perform?\n";
+    file.close();
+    std::cout << "-> Created dummy test file: " << filename << std::endl;
+}
+
+
+int main()
+{
+    std::cout << "-------------------------------------------------------------" << std::endl;
+    std::cout << "--------------------- Tokeniser 0.0.0.1 ---------------------" << std::endl;
+    std::cout << "---------- Tokenisation based on BytePair Encoding ----------" << std::endl;
+    std::cout << "-------------------------------------------------------------" << std::endl;
+    #ifdef USE_CUDA
+        std::cout << "Using CUDA" << std::endl;
+    #elif USE_OPENCL
+        std::cout << "Using OpenCL" << std::endl;
+        OpenCLContext ocl;
+    #elif USE_CPU
+        // No special message needed for CPU
+    #endif
+
+    try {
+        // --- 1. SETUP ---
+        // Define configuration and create dummy files for the demonstration
+        const std::string corpus_path = "corpus.txt";
+        const std::string test_file_path = "test_data.txt";
+        const int embeddingDimension = 64;
+        const int num_merges = 100; // More merges = larger, more specific vocabulary
+
+        create_dummy_corpus(corpus_path);
+        create_dummy_test_file(test_file_path);
+        
+        std::cout << "\n--------------------- 1. TRAINING -------------------------" << std::endl;
+        
+        // --- 2. INITIALISE & TRAIN TOKENIZER ---
+        tokeniser TOKENS(embeddingDimension);
+
+        // a. Read the corpus and prepare for BPE training
+        std::cout << "-> Reading and pre-tokenizing corpus..." << std::endl;
+        std::vector<std::string> pre_tokens;
+        TOKENS.splitWordsFromTxt(corpus_path, pre_tokens);
+
+        // b. Train the BPE model
+        std::cout << "-> Starting BPE training with " << num_merges << " merges..." << std::endl;
+        std::vector<std::string> final_vocabulary;
+        TOKENS.groupCommonTokens(pre_tokens, num_merges, final_vocabulary);
+
+        std::cout << "-> Training complete." << std::endl;
+        std::cout << "-> Final vocabulary size: " << TOKENS.getVocabularySize() << std::endl;
+
+        std::cout << "\n--------------------- 2. INFERENCE ------------------------" << std::endl;
+        
+        // --- 3. USE THE TRAINED TOKENIZER ---
+
+        // a. Tokenize a single sentence string
+        std::cout << "-> Example 1: Tokenizing a single sentence." << std::endl;
+        std::string sentence = "The quick wizards are boxing!";
+        std::vector<std::string> subwords;
+        TOKENS.splitSentence(sentence, subwords);
+
+        std::cout << "   Original: \"" << sentence << "\"" << std::endl;
+        std::cout << "   Tokenized: ";
+        for (const auto& token : subwords) {
+            std::cout << "'" << token << "' ";
+        }
+        std::cout << "\n" << std::endl;
+
+        // b. Tokenize an entire file using the new function
+        std::cout << "-> Example 2: Tokenizing an entire file ('" << test_file_path << "')." << std::endl;
+        std::vector<std::string> file_subwords = TOKENS.tokeniseFile(test_file_path);
+
+        std::cout << "   Total subwords from file: " << file_subwords.size() << std::endl;
+        std::cout << "   First 20 tokens: ";
+        for(int i = 0; i < file_subwords.size() && i < 20; ++i) {
+            std::cout << "'" << file_subwords[i] << "' ";
+        }
+        std::cout << "..." << std::endl;
+        
+    } catch (const std::exception& e) {
+        std::cerr << "An error occurred: " << e.what() << std::endl;
+        return 1;
+    }
+
+
+    std::cout << "-------------------------------------------------------------" << std::endl;
+    return 0;
+}
+
+
+#include "include/tokenise.hpp"
+#include <fstream>
+#include <sstream>
+#include <regex>
+#include <map>
+#include <algorithm>
+#include <iostream>
+#include <cctype>
+
+
+/**
+ * @brief Calculates the frequency of all adjacent pairs of symbols.
+ * This function is a core component of the Byte Pair Encoding (BPE) algorithm.
+ * It iterates through all words and their current token splits to count how
+ * many times each adjacent pair of tokens appears.
+ * @param word_counts A map from each word in the corpus to its frequency.
+ * @param splits A map from each word to its current representation as a vector of subword tokens.
+ * @return A map where keys are pairs of adjacent tokens and values are their total frequency.
+ */
+std::map<std::pair<std::string, std::string>, int> get_pair_stats( const std::map<std::string, int>& word_counts,
+    const std::map<std::string, std::vector<std::string>>& splits) 
+{
+    std::map<std::pair<std::string, std::string>, int> pair_freqs;
+    for (const auto& pair : word_counts) {
+        const std::string& word = pair.first;
+        const int count = pair.second;
+        const std::vector<std::string>& symbols = splits.at(word);
+        for (size_t i = 0; i < symbols.size() - 1; ++i) {
+            pair_freqs[{symbols[i], symbols[i + 1]}] += count;
+        }
+    }
+    return pair_freqs;
+}
+
+
+/**
+ * @brief Merges a specified pair of tokens into a new single token across all word splits.
+ * This function performs the "merge" step of the BPE algorithm by replacing all
+ * occurrences of the most frequent pair with a new combined token.
+ * @param best_pair The pair of tokens to be merged (e.g., {"t", "h"}).
+ * @param splits The map of word splits to be updated. This is modified in place.
+ */
+void merge_pair(const std::pair<std::string, std::string>& best_pair,
+                std::map<std::string, std::vector<std::string>>& splits) 
+{
+    std::string new_token = best_pair.first + best_pair.second;
+    for (auto& pair : splits) {
+        std::vector<std::string>& symbols = pair.second;
+        std::vector<std::string> new_symbols;
+        size_t i = 0;
+        while (i < symbols.size()) {
+            if (i < symbols.size() - 1 && symbols[i] == best_pair.first && symbols[i+1] == best_pair.second) {
+                new_symbols.push_back(new_token);
+                i += 2;
+            } 
+            else {
+                new_symbols.push_back(symbols[i]);
+                i += 1;
+            }
+        }
+        symbols = new_symbols;
+    }
+}
+
+// --- Class Method Implementations ---
+
+/**
+ * @brief Extracts all words from a text file.
+ * Reads a file, finds all sequences of alphabetic characters, converts them
+ * to lowercase, and populates a vector with them.
+ * @param path2txt The path to the input text file.
+ * @param words Output vector to store the extracted words.
+ */
+void tokeniser::splitWordsFromTxt(const std::string& path2txt, std::vector<std::string>& pre_tokens) {
+    pre_tokens.clear();
+    std::ifstream file(path2txt);
+    if (!file.is_open()) {
+        throw std::runtime_error("Error: Could not open file: " + path2txt);
+    }
+
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    std::string text = buffer.str();
+
+    // MODIFICATION: Use the more sophisticated regex to capture words OR punctuation.
+    // This regex captures sequences of letters OR single non-letter, non-space characters.
+    std::regex re(R"([a-zA-Z]+|[^a-zA-Z\s])");
+    auto tokens_begin = std::sregex_iterator(text.begin(), text.end(), re);
+    auto tokens_end = std::sregex_iterator();
+
+    for (std::sregex_iterator i = tokens_begin; i != tokens_end; ++i) {
+        std::string token = (*i).str();
+        // MODIFICATION: Only convert to lowercase if it's a word.
+        if (!token.empty() && std::isalpha(static_cast<unsigned char>(token[0]))) {
+            std::transform(token.begin(), token.end(), token.begin(), ::tolower);
+        }
+        pre_tokens.push_back(token);
+    }
+}
+
+
+/**
+ * @brief Splits a single word into a sequence of subword tokens using the learned vocabulary.
+ * This function implements the tokenization of a single word by greedily matching the
+ * longest possible tokens from the vocabulary.
+ * @param word The word to be tokenized.
+ * @param subwords Output vector to store the resulting subword tokens.
+ */
+void tokeniser::splitWord(const std::string& word, std::vector<std::string>& subwords) const {
+    subwords.clear();
+    if (word.empty()) return;
+
+    // Add end-of-word token to handle word boundaries correctly
+    std::string current_word = word + "</w>";
+    
+    while (!current_word.empty()) {
+        bool found_match = false;
+        // Greedily find the longest token in our vocabulary that is a prefix of the current word.
+        // This requires the vocabulary `this->tokens` to be sorted by length, descending.
+        for (const auto& token : this->tokens) {
+            if (current_word.rfind(token, 0) == 0) { // check if string starts with token
+                subwords.push_back(token);
+                current_word = current_word.substr(token.length());
+                found_match = true;
+                break;
+            }
+        }
+        if (!found_match) {
+            // Fallback for unknown characters. This should not happen if the initial
+            // vocabulary includes all single characters from the training corpus.
+            subwords.push_back(current_word.substr(0, 1));
+            current_word = current_word.substr(1);
+        }
+    }
+}
+
+/**
+ * @brief Tokenizes a full sentence into a sequence of subword tokens.
+ * This function splits a sentence into words and punctuation, then tokenizes
+ * each word using the `splitWord` method.
+ * @param sentence The input sentence string.
+ * @param all_subwords Output vector to store the final sequence of tokens.
+ */
+void tokeniser::splitSentence(const std::string& sentence, std::vector<std::string>& all_subwords) const {
+    all_subwords.clear();
+
+    // Regex to split sentence by words and punctuation.
+    // It captures sequences of letters OR single non-letter, non-space characters.
+    std::regex re(R"([a-zA-Z]+|[^a-zA-Z\s])");
+    auto words_begin = std::sregex_iterator(sentence.begin(), sentence.end(), re);
+    auto words_end = std::sregex_iterator();
+
+    for (std::sregex_iterator i = words_begin; i != words_end; ++i) {
+        std::string token_str = (*i).str();
+        
+        // If it's a word (starts with a letter), split it using our learned vocabulary
+        if (std::isalpha(token_str[0])) {
+            std::string lower_token_str = token_str;
+            std::transform(lower_token_str.begin(), lower_token_str.end(), lower_token_str.begin(), ::tolower);
+            
+            std::vector<std::string> word_subwords;
+            splitWord(lower_token_str, word_subwords);
+            all_subwords.insert(all_subwords.end(), word_subwords.begin(), word_subwords.end());
+        } 
+        else {
+            // It's punctuation or another symbol, keep it as a single token
+            all_subwords.push_back(token_str);
+        }
+    }
+}
+
+/**
+ * @brief MODIFIED: Learns a BPE vocabulary from a pre-tokenized corpus.
+ * This function implements the BPE training algorithm. It distinguishes between
+ * words (which are subject to BPE) and punctuation (which are treated as atomic tokens).
+ * @param pre_tokens A vector of words and punctuation from the training corpus.
+ * @param num_merges The number of merge operations to perform on the words.
+ * @param final_vocab Output vector to store the learned vocabulary tokens.
+ */
+void tokeniser::groupCommonTokens(std::vector<std::string>& pre_tokens, int num_merges, std::vector<std::string>& final_vocab) {
+    // 1. Initial Vocabulary & Word Preparation
+    std::set<std::string> vocab;
+    std::map<std::string, int> word_counts;
+    std::map<std::string, std::vector<std::string>> splits;
+
+    // Helper lambda to check if a token is a word to be split.
+    auto is_word_for_bpe = [](const std::string& s) -> bool {
+        if (s.empty()) return false;
+        // A simple check: does it start with a letter?
+        return std::isalpha(static_cast<unsigned char>(s[0]));
+    };
+
+    // Iterate through pre_tokens, separating words for BPE
+    for (const auto& token : pre_tokens) {
+        if (is_word_for_bpe(token)) {
+            word_counts[token]++;
+        } else {
+            // It's punctuation or another symbol, treat it as an atomic token.
+            vocab.insert(token);
+        }
+    }
+
+    // Initialize splits for each word into individual characters
+    for (const auto& pair : word_counts) {
+        const std::string& w = pair.first;
+        std::vector<std::string> chars;
+        for (char c : w) {
+            std::string s(1, c);
+            chars.push_back(s);
+            vocab.insert(s); // Add each character to the initial vocab
+        }
+        // Add a special end-of-word token.
+        chars.push_back("</w>");
+        splits[w] = chars;
+    }
+    // Add the end-of-word token to the vocabulary as well.
+    vocab.insert("</w>");
+
+    // 2. Iterative Merging (This part only operates on the words)
+    for (int i = 0; i < num_merges; ++i) {
+        auto pair_stats = get_pair_stats(word_counts, splits);
+        if (pair_stats.empty()) {
+            break; 
+        }
+
+        auto best_pair = std::max_element(pair_stats.begin(), pair_stats.end(),
+            [](const auto& a, const auto& b) {
+                return a.second < b.second;
+            })->first;
+
+        merge_pair(best_pair, splits);
+        vocab.insert(best_pair.first + best_pair.second);
+
+        // Optional: Keep the print statement for debugging
+        std::cout << "Merge " << i + 1 << ": " << best_pair.first << " + " << best_pair.second << " -> " << best_pair.first + best_pair.second << std::endl;
+    }
+
+    final_vocab.assign(vocab.begin(), vocab.end());
+
+    std::sort(final_vocab.begin(), final_vocab.end(), [](const std::string& a, const std::string& b){
+        return a.length() > b.length();
+    });
+
+    this->tokens = final_vocab;
+    this->vocSize = this->tokens.size();
+}
+
+/**
+ * @brief Calculates the frequency of each final token based on the trained vocabulary.
+ * This function iterates through the original pre-tokenized corpus, splits words into
+ * subwords using the learned BPE vocabulary, and counts the occurrences of each final
+ * token. The results are stored in the `statOfEmbeddings` member variable. If an
+ * output path is provided, it saves the statistics to a two-column CSV file
+ * ('token', 'repetitions').
+ * @param pre_tokens A vector of all words and punctuation from the training corpus.
+ * @param outputPath The path to the CSV file for saving token statistics. If empty, no file is saved.
+ */
+void tokeniser::calculateTokenStats(const std::vector<std::string>& pre_tokens, const std::string& outputPath) {
+    this->statOfEmbeddings.clear();
+
+    // Helper lambda to identify words that were processed by BPE.
+    // This must be consistent with the logic in `groupCommonTokens`.
+    auto is_word_for_bpe = [](const std::string& s) -> bool {
+        if (s.empty()) return false;
+        // A simple check: does it start with a letter?
+        return std::isalpha(static_cast<unsigned char>(s[0]));
+    };
+
+    for (const auto& pre_token : pre_tokens) {
+        if (is_word_for_bpe(pre_token)) {
+            std::vector<std::string> subwords;
+            // `splitWord` tokenizes a single word using the final vocabulary.
+            this->splitWord(pre_token, subwords);
+            for (const auto& subword : subwords) {
+                this->statOfEmbeddings[subword]++;
+            }
+        }
+        else {
+            // It's punctuation or another symbol, which is treated as an atomic token.
+            this->statOfEmbeddings[pre_token]++;
+        }
+    }
+
+    if (!outputPath.empty()) {
+        std::cout << "-> Saving token statistics to: " << outputPath << std::endl;
+        std::ofstream outFile(outputPath);
+        if (!outFile.is_open()) {
+            // Warn the user but don't stop the program, as saving stats might be optional.
+            std::cerr << "Warning: Could not open file to save token stats: " << outputPath << std::endl;
+            return;
+        }
+
+        // Write header
+        outFile << "token,repetitions\n";
+
+        // Write data
+        for (const auto& pair : this->statOfEmbeddings) {
+            // Handle tokens that might contain commas by quoting them
+            outFile << "\"" << pair.first << "\"," << pair.second << "\n";
+        }
+
+        outFile.close();
+        std::cout << "-> Successfully saved statistics file." << std::endl;
+    }
+}
+
+
+/**
+ * @brief Reads a file (.txt or .csv) line by line and tokenizes its entire content.
+ * This function is designed for efficiency with large files. It reads one line
+ * at a time, tokenizes it using the pre-trained BPE vocabulary, and appends
+ * the resulting subwords to a single output vector. For CSV files, it treats
+ * each row as a single sentence to be tokenized.
+ * @param filePath The path to the input file.
+ * @return A flat vector of strings containing all the BPE subwords from the file.
+ * @throws std::runtime_error if the file cannot be opened.
+ */
+std::vector<std::string> tokeniser::tokeniseFile(const std::string& filePath) const {
+    // 1. Open the file
+    std::ifstream file(filePath);
+    if (!file.is_open()) {
+        throw std::runtime_error("Error: Could not open file: " + filePath);
+    }
+
+    std::vector<std::string> all_file_subwords;
+    std::string line;
+
+    // 2. Read file line by line to handle large files efficiently
+    while (std::getline(file, line)) {
+        if (line.empty()) {
+            continue; // Optionally skip empty lines
+        }
+
+        // 3. Tokenize the current line using the existing splitSentence logic
+        std::vector<std::string> line_subwords;
+        this->splitSentence(line, line_subwords);
+
+        // 4. Append the results to the master vector
+        // Using insert is generally more efficient for appending a whole vector
+        all_file_subwords.insert(all_file_subwords.end(), line_subwords.begin(), line_subwords.end());
+    }
+
+    file.close();
+    return all_file_subwords;
+}
+
+
+ThinkingThoughts
+(experimental)
+Auto
+Expand to view model thoughts
+
+chevron_right
+ThinkingThoughts
+(experimental)
+Auto
+Expand to view model thoughts
+
+chevron_right
+ThinkingThoughts
+(experimental)
+Auto
+Expand to view model thoughts
+
+chevron_right
+ThinkingThoughts
+(experimental)
+Auto
+Expand to view model thoughts
+
+chevron_right
+Of course. Moving the BPE training loop to the GPU is an advanced but potentially very powerful optimization. The core idea is to transform the word data into a GPU-friendly format (arrays of integers) and then launch kernels to perform the statistics gathering and merging operations in parallel.
+This is a complex task. The strategy will be:
+Data Transformation: Convert the map<string, vector<string>> splits into large, flat integer arrays on the host. We will create a mapping from each unique token string to an integer ID.
+GPU Memory Management: Create a helper struct to manage the GPU device pointers for CUDA or OpenCL memory objects.
+get_pair_stats on GPU:
+Kernel: A kernel will launch one thread for each pair of tokens in the corpus. Each thread will write the pair of token IDs it finds into a large intermediate buffer.
+Host: The host will copy this buffer of pairs back from the GPU.
+Reduction: The host will then count the occurrences of each pair (this can be done with a fast, multithreaded CPU function) to find the most frequent one. A full reduction on the GPU is possible but significantly more complex to implement correctly (requiring sorting or complex atomics). This hybrid approach is a great balance of performance and simplicity.
+merge_pair on GPU:
+Kernel: A kernel will read from the old splits buffer and write to a new one, replacing the best_pair IDs with the new_token ID as it goes.
+Host: The host will swap the pointers, making the new buffer the input for the next iteration, and free the old buffer.
+1. Additions to tokenise.hpp
+We need new declarations for the host-side functions and a struct to manage GPU data.
+Generated cpp
+// tokenise.hpp
+
+// ... inside the tokeniser class ...
+public:
+    // ... (existing members) ...
+
+    #ifdef USE_CUDA
+    // Forward declare CUDA-specific data struct
+    struct CudaBpeData;
+    void cuBpeGroupCommonTokens(CudaBpeData& gpu_data, std::map<std::string, int>& word_counts, int num_merges, std::set<std::string>& vocab, std::map<std::string, std::vector<std::string>>& splits);
+    #elif USE_OPENCL
+    // Forward declare OpenCL-specific data struct
+    struct OpenCLBpeData;
+    void clBpeGroupCommonTokens(OpenCLBpeData& gpu_data, std::map<std::string, int>& word_counts, int num_merges, std::set<std::string>& vocab, std::map<std::string, std::vector<std::string>>& splits);
+    #endif
+
+// ...
+
+#ifdef USE_CUDA
+// Helper struct to hold all necessary CUDA device pointers for BPE
+struct tokeniser::CudaBpeData {
+    int* d_splits = nullptr;          // Flat array of all token IDs for all words
+    int* d_word_indices = nullptr;    // Start index of each word in d_splits
+    int* d_word_counts = nullptr;     // Frequency of each word
+    int* d_output_pairs = nullptr;    // Intermediate buffer for pairs found by stats kernel
+    int* d_new_splits = nullptr;      // Output buffer for the merge kernel
+    int* d_total_new_size = nullptr;  // Atomic counter for the new size after merge
+
+    size_t splits_size = 0;
+    size_t word_count = 0;
+    size_t output_pairs_capacity = 0;
+};
+#endif
+
+#ifdef USE_OPENCL
+#include "clcontext.hpp" // Make sure OpenCL context is available
+// Helper struct to hold all necessary OpenCL memory objects for BPE
+struct tokeniser::OpenCLBpeData {
+    cl_mem d_splits = nullptr;
+    cl_mem d_word_indices = nullptr;
+    cl_mem d_word_counts = nullptr;
+    cl_mem d_output_pairs = nullptr;
+    cl_mem d_new_splits = nullptr;
+    cl_mem d_total_new_size = nullptr;
+
+    size_t splits_size = 0;
+    size_t word_count = 0;
+    size_t output_pairs_capacity = 0;
+};
+#endif
+
+// ... rest of the header
+Use code with caution.
+C++
+2. Modifications to tokenise.cpp
+We need to modify the main groupCommonTokens function to dispatch to the GPU versions if the flags are set.
+Generated cpp
+// tokenise.cpp
+
+// ... includes ...
+
+// This function will be called by both CUDA and OpenCL host code after getting pairs from GPU
+std::pair<int, int> get_best_pair_from_gpu_output(int* h_output_pairs, size_t total_pairs) {
+    std::map<std::pair<int, int>, int> pair_counts;
+    for (size_t i = 0; i < total_pairs; ++i) {
+        pair_counts[{h_output_pairs[i * 2], h_output_pairs[i * 2 + 1]}]++;
+    }
+
+    if (pair_counts.empty()) {
+        return {-1, -1};
+    }
+
+    return std::max_element(pair_counts.begin(), pair_counts.end(),
+        [](const auto& a, const auto& b) {
+            return a.second < b.second;
+        })->first;
+}
+
+
+void tokeniser::groupCommonTokens(std::vector<std::string>& pre_tokens, int num_merges, std::vector<std::string>& final_vocab) {
+    // 1. Initial Vocabulary & Word Preparation (Same as before)
+    std::set<std::string> vocab;
+    std::map<std::string, int> word_counts;
+    std::map<std::string, std::vector<std::string>> splits;
+
+    // ... (code to populate vocab, word_counts, and splits is identical) ...
+
+    #if defined(USE_CUDA)
+        CudaBpeData gpu_data;
+        // The GPU version will handle the loop internally
+        cuBpeGroupCommonTokens(gpu_data, word_counts, num_merges, vocab, splits);
+    #elif defined(USE_OPENCL)
+        OpenCLBpeData gpu_data;
+        // The GPU version will handle the loop internally
+        clBpeGroupCommonTokens(gpu_data, word_counts, num_merges, vocab, splits);
+    #else
+        // Fallback to multithreaded CPU version
+        std::cout << "Using multithreaded CPU for BPE training with " << this->num_threads << " threads." << std::endl;
+        for (int i = 0; i < num_merges; ++i) {
+            auto pair_stats = parallel_get_pair_stats(word_counts, splits, this->num_threads);
+            if (pair_stats.empty()) break;
+            auto best_pair = std::max_element(pair_stats.begin(), pair_stats.end(),
+                [](const auto& a, const auto& b) { return a.second < b.second; })->first;
+            parallel_merge_pair(best_pair, splits, this->num_threads);
+            vocab.insert(best_pair.first + best_pair.second);
+            std::cout << "Merge " << i + 1 << ": " << best_pair.first << " + " << best_pair.second << " -> " << best_pair.first + best_pair.second << std::endl;
+        }
+    #endif
+
+    // 3. Final Vocabulary Construction (Same as before)
+    final_vocab.assign(vocab.begin(), vocab.end());
+    std::sort(final_vocab.begin(), final_vocab.end(), [](const std::string& a, const std::string& b){
+        return a.length() > b.length();
+    });
+    this->tokens = final_vocab;
+    this->vocSize = this->tokens.size();
+}
+Use code with caution.
+C++
+3. GPU Implementation File (bpe_gpu.cu for CUDA)
+Create a new file, for example, bpe_gpu.cu, and compile it with NVCC. This will contain both the host-side logic and the device kernels.
+Generated cpp
+// bpe_gpu.cu
+#include "include/tokenise.hpp"
+#include <cuda_runtime.h>
+#include <iostream>
+#include <vector>
+#include <map>
+#include <string>
+
+// Forward declaration for the helper function defined in tokenise.cpp
+std::pair<int, int> get_best_pair_from_gpu_output(int* h_output_pairs, size_t total_pairs);
+
+// ===================================
+// CUDA KERNELS
+// ===================================
+
+__global__ void get_pair_stats_kernel(const int* d_splits, const int* d_word_indices, const int* d_word_counts,
+                                      int* d_output_pairs, const int num_words) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_words) return;
+
+    int word_freq = d_word_counts[idx];
+    int start_pos = d_word_indices[idx];
+    int end_pos = d_word_indices[idx + 1];
+    int num_tokens_in_word = end_pos - start_pos;
+
+    if (num_tokens_in_word < 2) return;
+
+    // Each thread writes its pairs into the global output buffer
+    // Note: This is a simplified approach. For max performance, one would use shared memory
+    // and more complex reduction patterns to minimize global memory writes.
+    for (int i = 0; i < num_tokens_in_word - 1; ++i) {
+        int pair_start_idx = start_pos + i;
+        // We output the same pair 'word_freq' times.
+        // This is inefficient but demonstrates the principle.
+        // A better way is to count locally and reduce.
+        for (int k = 0; k < word_freq; ++k) {
+            // This needs an atomic counter to find the write position, or pre-calculate offsets.
+            // For this example, we assume pre-calculated offsets for simplicity.
+            // In a real scenario, this part is the hardest.
+            // Let's stick to the hybrid model: kernel finds unique pairs, host multiplies by freq.
+        }
+        // Simplified: output each pair once. The host will handle frequency.
+        // This requires an atomic counter for the output buffer index.
+        // Let's assume for this example a different kernel where each thread processes one pair, not one word.
+    }
+}
+
+
+// A more viable kernel design: each thread processes one potential pair location
+__global__ void get_pair_stats_kernel_v2(const int* d_splits, const int* d_word_indices,
+                                         int* d_output_pairs, int* d_pair_count, size_t total_num_pairs) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= total_num_pairs) return;
+
+    // This kernel needs a pre-computed map from global pair index `idx`
+    // to the actual pair in `d_splits`. This pre-computation is complex.
+    // Let's revert to the hybrid model's core idea: offload the iteration, reduce on CPU.
+}
+
+// Final simple, workable kernel for the hybrid model.
+// Each thread handles one word. It finds the pairs and writes them to the output.
+__global__ void find_all_pairs_kernel(const int* d_splits, const int* d_word_indices, int num_words,
+                                      int* d_output_pairs, int* d_output_pair_counter, const int* d_word_counts) {
+    int word_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (word_idx >= num_words) return;
+
+    int start = d_word_indices[word_idx];
+    int end = d_word_indices[word_idx + 1];
+
+    if (end - start < 2) return;
+
+    int word_freq = d_word_counts[word_idx];
+
+    for (int i = start; i < end - 1; ++i) {
+        // Atomically get a position in the output buffer for each instance of the pair
+        for(int k=0; k < word_freq; ++k) {
+            unsigned int write_idx = atomicAdd(d_output_pair_counter, 1);
+            d_output_pairs[write_idx * 2] = d_splits[i];
+            d_output_pairs[write_idx * 2 + 1] = d_splits[i + 1];
+        }
+    }
+}
+
+
+__global__ void merge_pair_kernel(const int* d_old_splits, int* d_new_splits,
+                                  const int* d_word_indices, int num_words,
+                                  int p1, int p2, int new_token,
+                                  int* d_new_word_indices) {
+    int word_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (word_idx >= num_words) return;
+
+    int read_start = d_word_indices[word_idx];
+    int read_end = d_word_indices[word_idx + 1];
+
+    // First, calculate the new size for this word's split
+    int new_size = 0;
+    for (int i = read_start; i < read_end; ) {
+        if (i < read_end - 1 && d_old_splits[i] == p1 && d_old_splits[i+1] == p2) {
+            new_size++;
+            i += 2;
+        } else {
+            new_size++;
+            i++;
+        }
+    }
+    // Store the new size. A parallel scan would be needed to get write indices.
+    // For simplicity, we assume another kernel pre-calculates the write start pos.
+    int write_start = d_new_word_indices[word_idx];
+
+    int write_pos = write_start;
+    for (int i = read_start; i < read_end; ) {
+        if (i < read_end - 1 && d_old_splits[i] == p1 && d_old_splits[i+1] == p2) {
+            d_new_splits[write_pos++] = new_token;
+            i += 2;
+        } else {
+            d_new_splits[write_pos++] = d_old_splits[i];
+            i++;
+        }
+    }
+}
+
+
+// ===================================
+// CUDA HOST-SIDE FUNCTIONS
+// ===================================
+
+void tokeniser::cuBpeGroupCommonTokens(CudaBpeData& gpu_data, std::map<std::string, int>& word_counts, int num_merges, std::set<std::string>& vocab, std::map<std::string, std::vector<std::string>>& splits) {
+    // 1. Convert data to GPU-friendly format
+    std::map<std::string, int> token_to_id;
+    std::vector<std::string> id_to_token;
+    int next_id = 0;
+    for (const auto& token : vocab) {
+        if (token_to_id.find(token) == token_to_id.end()) {
+            token_to_id[token] = next_id;
+            id_to_token.push_back(token);
+            next_id++;
+        }
+    }
+
+    std::vector<int> h_splits_ids;
+    std::vector<int> h_word_indices;
+    std::vector<int> h_word_counts;
+    h_word_indices.push_back(0);
+    size_t total_pairs = 0;
+
+    for (const auto& pair : splits) {
+        const std::string& word = pair.first;
+        const std::vector<std::string>& subwords = pair.second;
+        for (const auto& subword : subwords) {
+            h_splits_ids.push_back(token_to_id[subword]);
+        }
+        h_word_indices.push_back(h_splits_ids.size());
+        h_word_counts.push_back(word_counts[word]);
+        if (subwords.size() > 1) {
+            total_pairs += (subwords.size() - 1) * word_counts[word];
+        }
+    }
+
+    gpu_data.word_count = splits.size();
+    gpu_data.splits_size = h_splits_ids.size();
+
+    // 2. Allocate GPU memory and copy data
+    cudaMalloc(&gpu_data.d_splits, gpu_data.splits_size * sizeof(int));
+    cudaMalloc(&gpu_data.d_word_indices, (gpu_data.word_count + 1) * sizeof(int));
+    cudaMalloc(&gpu_data.d_word_counts, gpu_data.word_count * sizeof(int));
+    
+    cudaMemcpy(gpu_data.d_splits, h_splits_ids.data(), gpu_data.splits_size * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(gpu_data.d_word_indices, h_word_indices.data(), (gpu_data.word_count + 1) * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(gpu_data.d_word_counts, h_word_counts.data(), gpu_data.word_count * sizeof(int), cudaMemcpyHostToDevice);
+
+    gpu_data.output_pairs_capacity = total_pairs;
+    cudaMalloc(&gpu_data.d_output_pairs, gpu_data.output_pairs_capacity * 2 * sizeof(int));
+    cudaMalloc(&gpu_data.d_total_new_size, sizeof(int)); // Used as a counter
+
+    // 3. Main BPE Loop
+    int threads_per_block = 256;
+    for (int i = 0; i < num_merges; ++i) {
+        // --- Get Pair Stats ---
+        int zero = 0;
+        cudaMemcpy(gpu_data.d_total_new_size, &zero, sizeof(int), cudaMemcpyHostToDevice);
+
+        int num_blocks = (gpu_data.word_count + threads_per_block - 1) / threads_per_block;
+        find_all_pairs_kernel<<<num_blocks, threads_per_block>>>(gpu_data.d_splits, gpu_data.d_word_indices, gpu_data.word_count, gpu_data.d_output_pairs, gpu_data.d_total_new_size, gpu_data.d_word_counts);
+        cudaDeviceSynchronize(); // Wait for kernel to finish
+
+        int h_total_pairs_found;
+        cudaMemcpy(&h_total_pairs_found, gpu_data.d_total_new_size, sizeof(int), cudaMemcpyDeviceToHost);
+        
+        if (h_total_pairs_found == 0) break;
+
+        std::vector<int> h_output_pairs(h_total_pairs_found * 2);
+        cudaMemcpy(h_output_pairs.data(), gpu_data.d_output_pairs, h_total_pairs_found * 2 * sizeof(int), cudaMemcpyDeviceToHost);
+
+        auto best_pair_ids = get_best_pair_from_gpu_output(h_output_pairs.data(), h_total_pairs_found);
+        if (best_pair_ids.first == -1) break;
+
+        std::string p1_str = id_to_token[best_pair_ids.first];
+        std::string p2_str = id_to_token[best_pair_ids.second];
+        std::string new_token_str = p1_str + p2_str;
+        
+        std::cout << "Merge " << i + 1 << ": " << p1_str << " + " << p2_str << " -> " << new_token_str << std::endl;
+
+        // --- Merge Pair ---
+        int new_token_id;
+        if (token_to_id.find(new_token_str) == token_to_id.end()) {
+            new_token_id = next_id++;
+            token_to_id[new_token_str] = new_token_id;
+            id_to_token.push_back(new_token_str);
+            vocab.insert(new_token_str);
+        } else {
+            new_token_id = token_to_id[new_token_str];
+        }
+
+        // This part is very complex. The merge kernel needs to write to a new buffer,
+        // and we need to calculate the new indices. For brevity, this is a simplification
+        // that shows the concept but would require more infrastructure (like a parallel scan)
+        // to be fully functional and efficient.
+        // A full implementation is beyond a simple response.
+        
+        // After merge, you would swap d_splits with a d_new_splits, free the old one,
+        // and update splits_size.
+        
+        // For this example, we will stop short of a full, looping merge implementation
+        // as it is non-trivial.
+        break; // Breaking loop to demonstrate the stats part.
+    }
+
+    // 4. Cleanup
+    cudaFree(gpu_data.d_splits);
+    cudaFree(gpu_data.d_word_indices);
+    cudaFree(gpu_data.d_word_counts);
+    cudaFree(gpu_data.d_output_pairs);
+    cudaFree(gpu_data.d_total_new_size);
+}
+Use code with caution.
+C++
+4. GPU Implementation for OpenCL
+The OpenCL version is conceptually identical. You would create a .cpp file for the host code and a .cl file for the kernels.
+bpe_kernels.cl:
+Generated c
+// bpe_kernels.cl
+__kernel void find_all_pairs_kernel(__global const int* splits,
+                                    __global const int* word_indices,
+                                    int num_words,
+                                    __global int* output_pairs,
+                                    __global int* output_pair_counter,
+                                    __global const int* word_counts) {
+    int word_idx = get_global_id(0);
+    if (word_idx >= num_words) return;
+
+    int start = word_indices[word_idx];
+    int end = word_indices[word_idx + 1];
+
+    if (end - start < 2) return;
+
+    int word_freq = word_counts[word_idx];
+
+    for (int i = start; i < end - 1; ++i) {
+        for (int k = 0; k < word_freq; ++k) {
+            uint write_idx = atomic_add(output_pair_counter, 1);
+            output_pairs[write_idx * 2] = splits[i];
+            output_pairs[write_idx * 2 + 1] = splits[i + 1];
+        }
+    }
+}
+// ... merge kernel would also be translated similarly ...
+Use code with caution.
+C
+The OpenCL host code (clBpeGroupCommonTokens) would follow the same logic as the CUDA version but use the OpenCL API: cl::Buffer for memory, cl::CommandQueue to enqueue writes/reads and kernel execution, etc. It's more verbose than CUDA but achieves the same result.
+Summary and Important Considerations
+Complexity: As you can see, moving this logic to the GPU is not trivial. The data structures must be flattened, and the algorithm must be re-thought in terms of parallel primitives (map, reduce, scan).
+The Hybrid Model is Key: The most practical approach for get_pair_stats is the hybrid model:
+GPU: Massively parallel generation of all occurring pairs.
+CPU: Fast, single- or multi-threaded reduction of the pair list to find the maximum.
+The Merge Step is Hard: The merge_pair step is challenging because the output size is not the same as the input size. A fully parallel version requires a parallel scan (prefix sum) to calculate the correct write position for each thread. The code provided for the merge kernel is a conceptual placeholder for this reason.
+Performance: For a very large corpus (gigabytes of text), this approach will be significantly faster than the CPU version. For small corpora, the overhead of transferring data to and from the GPU will make the CPU version faster.
+Code Provided: The CUDA code gives you a functional implementation of the most critical part (get_pair_stats) and outlines the structure for the complete loop. A production-ready version would require a more robust implementation of the merge step.
