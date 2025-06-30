@@ -65,6 +65,7 @@ add_executable(TOKENISE main.cpp
                         tokenise.cpp 
                         embedding.cpp 
                         split.cpp
+                        splitParallel.cpp
                         support.cpp
                         set.cpp
                         kernel.cu
