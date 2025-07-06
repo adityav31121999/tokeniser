@@ -11,17 +11,8 @@
 #include <mutex>                 // For std::mutex, std::lock_guard
 #include <condition_variable>    // For std::condition_variable
 #include <unordered_map>         // For the much faster hash map
-// ... other existing includes like <iostream>, <fstream>, <future>, etc.
-
 #include "clcontext.hpp"
 
-// struct for token related data
-struct token {
-    std::string token;
-    float seed;
-    std::vector<float> embedding;
-    std::vector<float> deEmbedding;
-};
 
 /**
  * Class to tokenise dataset into subwords and embeddings. The embeddings are of 
@@ -40,13 +31,12 @@ private:
     std::vector<std::vector<float>> deEmbeddings;   // inverse of each token of dimension d
     // map of tokens and their embeddings
     std::map<std::string, std::vector<float>> mappedEmbeddings;
-    std::map<std::string, int> statOfEmbeddings;    // hold number of uses of each token
-    FILE* csvTokensAndEmbeddings = nullptr;         // hold token and its respective embedding
-    FILE* csvTokensAndSeeds = nullptr;              // hold all tokens and seeds
+    std::map<std::string, int> statOfEmbeddings;    // hold tokens and their stats
 
 public:
 
     int num_threads;                                // number of threads
+    int corpusWordCount;                            // corpus word count
 
 // constructors
     // default constructors
@@ -84,10 +74,13 @@ public:
     void splitWordsFromCSV(const std::string& path2csv, std::vector<std::string>& tokens);
     void groupCommonTokens(std::vector<std::string>& words, int num_merges, std::vector<std::string>& final_vocab);
 
+    void learn_vocabulary_from_word_counts(const std::map<std::string, int>& corpus_word_counts, int num_merges, std::vector<std::string>& final_vocab);
     void splitWordsFromTxtParallel(const std::string& path2txt, std::vector<std::string>& words);
     void buildCorpusWordCountsParallel(const std::vector<std::string>& file_paths, std::map<std::string, int>& corpus_word_counts);
     void groupCommonTokensParallel(std::vector<std::string>& words, int num_merges, std::vector<std::string>& final_vocab);
     void groupCommonTokensParallel(const std::map<std::string, int>& corpus_word_counts, int num_merges, std::vector<std::string>& final_vocab);
+
+    void saveUniqueTokensToCSV(const std::map<std::string, int>& corpus_word_counts, const std::string& outputPath);
 
     void calculateTokenStatsFromCounts(const std::map<std::string, int>& corpus_word_counts, const std::string& outputPath);
     void calculateTokenStats(const std::vector<std::string>& pre_tokens, const std::string& outputPath);
@@ -95,17 +88,17 @@ public:
 
     /**
      * a generic lambda that implements the mathematical formula:
-     * --> f(i, j, seed) = (i * j + 1) * C * (seed^[j%d])
+     * --> f(i, j, seed) = (j + 1) * C * (seed^[j%d + 1]) / (j%d + 1)
      * where: C = 0.01, x = seed, and  d is the embedding dimension.
      */
     static constexpr auto embeddingFormulaLambda = [](int i, int j, int d_val, auto seed_val)
     {
         // (i * j + 1) * C
         // C = 0.01
-        float intermediate_val = static_cast<float>(j + 1) * 0.01f / j;
-        int exponent = j % d_val;
+        int exponent = (j % d_val) + 1;
+        float intermediate_val = static_cast<float>(j + 1) * 0.01f / exponent;
         // (seed^[j%d])
-        intermediate_val *= std::pow(seed_val, exponent+1);
+        intermediate_val *= std::pow(seed_val, exponent);
         return intermediate_val;
     };
 
@@ -183,15 +176,26 @@ public:
  */
 struct ProgressData {
     std::mutex mtx;
-    std::condition_variable cv; // NEW: For event-driven logging
+    std::condition_variable cv;
     long long total_bytes = 0;
     long long bytes_read = 0;
-    size_t files_completed_count = 0; // NEW: Counter for completed files
-    std::string current_file_in_progress;
-    // We no longer need the vector of completed file names for this logic
+    size_t files_completed_count = 0;
+    std::string last_file_completed;
 };
 
 
+struct PairHash {
+    template <class T1, class T2>
+    std::size_t operator() (const std::pair<T1, T2> &p) const {
+        auto h1 = std::hash<T1>{}(p.first);
+        auto h2 = std::hash<T2>{}(p.second);
+        // A common way to combine two hash values.
+        return h1 ^ (h2 << 1);
+    }
+};
+
+
+std::vector<std::string> pre_split_word(const std::string& word);
 std::map<std::pair<std::string, std::string>, int> get_pair_stats(const std::map<std::string, int>& word_counts,
     const std::map<std::string, std::vector<std::string>>& splits);
 void merge_pair(const std::pair<std::string, std::string>& best_pair, std::map<std::string, std::vector<std::string>>& splits);
@@ -200,8 +204,9 @@ std::map<std::pair<std::string, std::string>, int> parallel_get_pair_stats(const
 void parallel_merge_pair(const std::pair<std::string, std::string>& best_pair, std::map<std::string, std::vector<std::string>>& splits,
     int num_threads);
 void merge_maps(std::map<std::string, int>& destination, std::map<std::string, int>& source);
-
+void splitFileUsingTerminator(const std::string& originalFile, const std::string& newFile, const std::string& terminator);
 std::vector<float> vectorInverse(const std::vector<float>& vec);
+std::vector<std::string> pre_tokenize_word_by_corpus_freq(const std::string& word, const std::map<std::string, int>& corpus_word_counts);
 
 #ifdef USE_CUDA
 // kernel for embedding calculation
