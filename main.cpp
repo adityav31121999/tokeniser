@@ -25,8 +25,7 @@ int main()
     try {
         const int embeddingDimension = 64;      // embedding dimension
         const int d_val = 4;                    // Your original divisor for the formula
-        // number of merges (m, n, n_1, n_2 in W): 32768 * 2^n * m or 8192 * 2^n * m or 2^n_1 * 2^n_2 * m
-        const int num_merges = 24576;
+        const int num_merges = 24576;           // 2^n or its multiple (8192 * 3 = 2^13 * 3)
         const std::string path2folder = "D:/train/txt";
         const std::string unique_tokens_output_path = "D:/train/_unique_initial_tokens.csv";
         const std::string stats_output_path = "D:/train/_final_token_stats.csv";
@@ -92,8 +91,6 @@ int main()
         std::cout << "------------------------ PROCESS FAILED ------------------------" << std::endl;
         return 1;
     }
-
-
     std::cout << "-------------------------------------------------------------" << std::endl;
     std::cout << "----------------------- PROCESS COMPLETE --------------------" << std::endl;
     std::cout << "-------------------------------------------------------------" << std::endl;
