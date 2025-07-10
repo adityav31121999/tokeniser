@@ -1,4 +1,5 @@
-#include "include/tokenise.hpp" // Your header file
+// corpus.cpp
+#include "include/tokenise.hpp"
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -17,10 +18,10 @@
 #include <set>
 #include <unordered_set> 
 
-
 // Create a global mutex and progress map for debugging.
 std::mutex progress_mutex;
 std::map<std::string, int> progress_map;
+
 
 /**
  * @brief The main entry point for learning a BPE vocabulary.
@@ -31,27 +32,12 @@ std::map<std::string, int> progress_map;
  * @param num_merges The number of merge operations to perform.
  * @param final_vocab Output vector to store the learned vocabulary tokens (for external use/saving).
  */
-void tokeniser::learn_vocabulary_from_word_counts(const std::map<std::string, int>& corpus_word_counts, int num_merges,
+void tokeniser::learn_vocabulary_from_word_counts(const std::unordered_map<std::string, int>& corpus_word_counts, int num_merges,
     std::vector<std::string>& final_vocab)
 {
-    // =========================================================================
-    // REMOVED STAGE 1: The complex word segmentation was the source of the error.
-    // We will now feed the raw word counts directly to the BPE algorithm.
-    // =========================================================================
     std::cout << "[INFO] Starting BPE training directly from raw corpus word counts." << std::endl;
     std::cout << "[INFO] Total unique words for training: " << corpus_word_counts.size() << std::endl;
-
-    // =========================================================================
-    // STAGE 2 (NOW THE ONLY STAGE): BPE REFINEMENT
-    // =========================================================================
-    // Call the BPE algorithm with the original, complete word counts.
-    // `groupCommonTokensParallel` will handle splitting words into characters.
-    groupCommonTokensParallel(corpus_word_counts, num_merges, final_vocab);
-
-    // =========================================================================
-    // *** FINAL STATE ASSIGNMENT (This part is correct) ***
-    // =========================================================================
-    // The orchestrator function sets the final state of the tokenizer.
+    groupCommonTokens(corpus_word_counts, num_merges, final_vocab);
     this->tokens = final_vocab;
     this->vocSize = this->tokens.size();
 }
@@ -62,16 +48,31 @@ void tokeniser::learn_vocabulary_from_word_counts(const std::map<std::string, in
  * This version uses the producer-consumer model and an event-driven logging
  * system. The main thread waits on a condition variable and prints a progress
  * update only when the producer thread signals that it has finished processing a file.
+ * This function is now fully optimized for std::unordered_map for corpus_word_counts.
+ * The final aggregation step is now parallelized using a merge tree.
  * @param file_paths A vector of paths to the text files.
  * @param corpus_word_counts Output map to be filled with unique tokens and their total counts.
  */
-// Now, replace the function itself
-void tokeniser::buildCorpusWordCountsParallel(const std::vector<std::string>& file_paths, std::map<std::string, int>& corpus_word_counts) {
+void tokeniser::buildCorpusWordCounts(const std::vector<std::string>& file_paths, 
+    std::unordered_map<std::string, int>& corpus_word_counts)
+{
     corpus_word_counts.clear();
-
-    const size_t CHUNK_SIZE = 10000;
+    const size_t CHUNK_SIZE = 10000; // Number of lines per chunk
     ThreadSafeQueue<std::vector<std::string>> work_queue;
-    int num_consumers = this->num_threads > 1 ? this->num_threads - 1 : 1;
+
+    // Determine number of producers and consumers
+    int num_producers = (this->num_threads <= 4) ? 1 : 2; // Original logic for producers
+    int num_consumers = this->num_threads - num_producers;
+    // Ensure at least one consumer if possible, otherwise prioritize producer for small thread counts
+    if (num_consumers < 1 && this->num_threads >= 1) { // If num_threads is 1, producer=1, consumer=0, adjust
+        num_consumers = 1;
+        num_producers = this->num_threads - num_consumers; // Adjust producer count if consumers need a thread
+        if (num_producers < 1) num_producers = 1; // Ensure at least one producer too
+    } else if (num_consumers < 1) { // Fallback if num_threads is weird, ensure minimum 1 producer, 1 consumer
+        num_producers = 1;
+        num_consumers = 1;
+    }
+
     ProgressData progress;
 
     // 1. PRE-COMPUTATION
@@ -81,31 +82,33 @@ void tokeniser::buildCorpusWordCountsParallel(const std::vector<std::string>& fi
         }
     }
 
-    // 2. DEFINE THE CONSUMER'S JOB
+    // 2. DEFINE THE CONSUMER'S JOB (Optimized with std::string_view)
     auto consumer_task = [&work_queue]() -> std::unordered_map<std::string, int> {
         std::unordered_map<std::string, int> local_counts;
         std::vector<std::string> chunk;
         while (work_queue.wait_and_pop(chunk)) {
-            for (const auto& line : chunk) {
+            for (const auto& line_str : chunk) {
+                std::string_view line(line_str);
                 for (size_t i = 0; i < line.length(); ) {
                     unsigned char current_char = line[i];
                     if (std::isalpha(current_char)) {
                         size_t start = i;
                         while (i < line.length() && std::isalpha(static_cast<unsigned char>(line[i]))) i++;
-                        // Extract the word with its original casing to allow for case-based splitting.
-                        std::string original_word = line.substr(start, i - start);
                         
-                        // Pre-split the word based on casing (e.g., camelCase).
-                        std::vector<std::string> sub_words = pre_split_word(original_word);
+                        std::string_view original_word_view = line.substr(start, i - start);
+                        std::vector<std::string_view> sub_words_view = pre_split_word(original_word_view);
                         
-                        // Process each resulting sub-word.
-                        for (auto& sub_word : sub_words) {
-                            std::transform(sub_word.begin(), sub_word.end(), sub_word.begin(), [](unsigned char c){ return std::tolower(c); });
-                            local_counts[sub_word]++;
+                        for (auto& sub_word_view : sub_words_view) {
+                            std::string lowercased_sub_word;
+                            lowercased_sub_word.reserve(sub_word_view.length());
+                            for (char c : sub_word_view) {
+                                lowercased_sub_word += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                            }
+                            local_counts[lowercased_sub_word]++;
                         }
                     } 
                     else if (!std::isspace(current_char)) {
-                        local_counts[line.substr(i, 1)]++;
+                        local_counts[std::string(1, static_cast<char>(current_char))]++;
                         i++;
                     } 
                     else { i++; }
@@ -116,198 +119,148 @@ void tokeniser::buildCorpusWordCountsParallel(const std::vector<std::string>& fi
     };
 
     // 3. LAUNCH THREADS
-    std::cout << "-> Launching 1 Producer and " << num_consumers << " Consumer threads..." << std::endl;
+    std::cout << "-> Launching " << num_producers << " Producer(s) and " << num_consumers << " Consumer threads..." << std::endl;
 
     std::vector<std::future<std::unordered_map<std::string, int>>> consumer_futures;
+    consumer_futures.reserve(num_consumers);
     for (int i = 0; i < num_consumers; ++i) {
         consumer_futures.push_back(std::async(std::launch::async, consumer_task));
     }
 
-    // --- MODIFICATION: PRODUCER ---
-    // The producer thread now updates the new 'last_file_completed' member.
-    std::future<void> producer_future = std::async(std::launch::async, [&]() {
-        for (const auto& path : file_paths) {
-            std::string filename = std::filesystem::path(path).filename().string();
-            std::ifstream file(path); // Open in text mode as before
-            
-            // --- MODIFIED LOGIC: Use stream position for accurate byte counting ---
-            std::streampos last_pos = file.tellg(); // Get initial position (usually 0)
+    // --- PRODUCERS ---
+    std::vector<std::future<void>> producer_futures;
+    producer_futures.reserve(num_producers);
 
-            std::string line;
-            std::vector<std::string> chunk_buffer;
-            chunk_buffer.reserve(CHUNK_SIZE);
+    // Partition file_paths among producers
+    size_t total_files = file_paths.size();
+    
+    // Calculate base files per producer, and any remainder for the last producer
+    size_t files_per_producer_base = total_files / num_producers;
+    size_t remainder_files = total_files % num_producers;
+    size_t current_file_idx = 0;
 
-            while (std::getline(file, line)) {
-                chunk_buffer.push_back(std::move(line));
-                if (chunk_buffer.size() >= CHUNK_SIZE) {
-                    std::streampos current_pos = file.tellg();
-                    long long bytes_in_chunk = current_pos - last_pos;
-                    last_pos = current_pos;
-
-                    {
-                        std::lock_guard<std::mutex> lock(progress.mtx);
-                        progress.bytes_read += bytes_in_chunk;
-                    }
-                    
-                    work_queue.push(std::move(chunk_buffer));
-                    chunk_buffer.clear();
-                    chunk_buffer.reserve(CHUNK_SIZE);
-                }
-            }
-            
-            // After the loop, account for the final partial chunk
-            file.clear(); // Clear EOF flags
-            file.seekg(0, std::ios::end); // Seek to the end of the file
-            std::streampos end_pos = file.tellg();
-            long long final_bytes = end_pos - last_pos;
-
-            if (!chunk_buffer.empty()) {
-                work_queue.push(std::move(chunk_buffer));
-            }
-
-            // ATOMIC UPDATE AND SIGNAL
-            {
-                std::unique_lock<std::mutex> lock(progress.mtx);
-                progress.bytes_read += final_bytes;
-                progress.files_completed_count++;
-                progress.last_file_completed = filename;
-                progress.cv.notify_one();
-            }
+    for (int p_idx = 0; p_idx < num_producers; ++p_idx) {
+        size_t start_idx = current_file_idx;
+        size_t num_files_for_this_producer = files_per_producer_base;
+        if (p_idx < remainder_files) { // Distribute remainder files one by one to early producers
+            num_files_for_this_producer++;
         }
-        work_queue.close();
-    });
+        size_t end_idx = start_idx + num_files_for_this_producer;
+        
+        // Create a sub-vector of paths for this producer, moved into the lambda
+        std::vector<std::string> producer_file_subset;
+        producer_file_subset.reserve(num_files_for_this_producer);
+        for (size_t i = start_idx; i < end_idx; ++i) {
+            producer_file_subset.push_back(file_paths[i]);
+        }
+        current_file_idx = end_idx; // Update for next producer
+
+        producer_futures.push_back(std::async(std::launch::async, [&, producer_file_subset = std::move(producer_file_subset)]() mutable {
+            for (const auto& path : producer_file_subset) {
+                std::string filename = std::filesystem::path(path).filename().string();
+                std::ifstream file(path);
+                if (!file.is_open()) {
+                    std::cerr << "Warning: Producer thread could not open file: " << path << std::endl;
+                    {
+                        // Protect progress updates with mutex
+                        std::unique_lock<std::mutex> lock(progress.mtx);
+                        progress.files_completed_count++;
+                        progress.last_file_completed = filename + " (Error)";
+                        progress.cv.notify_one();
+                    }
+                    continue;
+                }
+                
+                std::streampos last_pos = file.tellg();
+                std::string line;
+                std::vector<std::string> chunk_buffer;
+                chunk_buffer.reserve(CHUNK_SIZE);
+
+                while (std::getline(file, line)) {
+                    chunk_buffer.push_back(std::move(line));
+                    if (chunk_buffer.size() >= CHUNK_SIZE) {
+                        std::streampos current_pos = file.tellg();
+                        long long bytes_in_chunk = current_pos - last_pos;
+                        last_pos = current_pos;
+
+                        {
+                            std::lock_guard<std::mutex> lock(progress.mtx);
+                            progress.bytes_read += bytes_in_chunk;
+                        }
+                        
+                        work_queue.push(std::move(chunk_buffer));
+                        chunk_buffer.clear();
+                        chunk_buffer.reserve(CHUNK_SIZE);
+                    }
+                }
+                
+                // After the loop, account for the final partial chunk and remaining bytes
+                file.clear();
+                file.seekg(0, std::ios::end);
+                std::streampos end_pos = file.tellg();
+                long long final_bytes = end_pos - last_pos;
+
+                if (!chunk_buffer.empty()) {
+                    work_queue.push(std::move(chunk_buffer));
+                }
+
+                // ATOMIC UPDATE AND SIGNAL for progress
+                {
+                    std::unique_lock<std::mutex> lock(progress.mtx);
+                    progress.bytes_read += final_bytes;
+                    progress.files_completed_count++;
+                    progress.last_file_completed = filename; // This will be overwritten by concurrent producers.
+                    progress.cv.notify_one();
+                }
+                file.close();
+            }
+        }));
+    }
 
     // 4. MAIN THREAD EVENT-DRIVEN LOGGING LOOP
     {
         std::unique_lock<std::mutex> lock(progress.mtx);
-        size_t total_files = file_paths.size();
-        
-        // NEW: Local state for the main thread to track what has been reported.
+        // size_t total_files = file_paths.size(); // Already calculated above
         size_t last_reported_count = 0;
 
-        // Loop until our local reported count matches the total number of files.
         while (last_reported_count < total_files) {
-            
-            // The predicate now checks if the shared count is greater than our local count.
-            // The thread will now correctly sleep until the producer makes new progress.
-            progress.cv.wait(lock, [&] { 
-                return progress.files_completed_count > last_reported_count; 
+            progress.cv.wait(lock, [&] {
+                return progress.files_completed_count > last_reported_count;
             });
 
-            // When we wake up, we know the count has increased. Print the new status.
-            float percentage = 0.0;
+            double percentage = 0.0;
             if (progress.total_bytes > 0) {
-                percentage = static_cast<float>(progress.bytes_read) / progress.total_bytes * 100.0;
+                percentage = static_cast<double>(progress.bytes_read) / progress.total_bytes * 100.0;
             }
 
             std::cout << "  -> Progress: [" << std::fixed << std::setprecision(4) << percentage << "%] "
                       << "\t| Completed " << progress.files_completed_count << "/" << total_files << " files. "
                       << "\t(Finished '" << progress.last_file_completed << "')" << std::endl;
 
-            // Update our local state to match the new progress.
             last_reported_count = progress.files_completed_count;
         }
     }
-    std::cout << "-> Producer has finished reading all files. Waiting for consumers...\n";
+    std::cout << "-> Producer(s) have finished reading all files. Waiting for consumers...\n";
 
-    // 5. AGGREGATE FINAL RESULTS (no changes needed here)
-    std::unordered_map<std::string, int> final_counts;
-    std::cout << "Counting: ";
-    int i = 0;
-    for (auto& f : consumer_futures) {
-        i++;
-        std::cout << i << " ";
-        auto local_map = f.get();
-        for (const auto& pair : local_map) {
-            final_counts[pair.first] += pair.second;
-        }
+    // Wait for all producer threads to complete their work.
+    for (auto& pf : producer_futures) {
+        pf.get(); // Blocks until this specific producer thread is done.
     }
-    std::cout << std::endl;
-    producer_future.get();
+    // Now that ALL producers are done, it's safe to close the work queue.
+    work_queue.close();
+    std::cout << "-> Work queue closed. Consumers will now finish processing remaining chunks and exit.\n";
+
+
+    // 5. AGGREGATE FINAL RESULTS (Parallelized using a merge tree)
+    std::cout << "-> Aggregating results using a parallel merge tree...\n";
+    std::unordered_map<std::string, int> final_counts;
+
+    if (!consumer_futures.empty()) {
+        auto final_future = merge_maps(consumer_futures, 0, consumer_futures.size() - 1);
+        final_counts = final_future.get();
+    }
+
     corpus_word_counts.clear();
     corpus_word_counts.insert(final_counts.begin(), final_counts.end());
-}
-
-
-
-/**
- * @brief Calculates final sub-token statistics from a pre-computed map of word counts
- *        and saves them to a CSV file, sorted alphanumerically by token. This version 
- *        is orders of magnitude faster than iterating over all tokens in the corpus.
- * @param corpus_word_counts Map of unique words and their frequencies.
- * @param outputPath Path to save the statistics CSV file.
- */
-void tokeniser::calculateTokenStatsFromCounts(const std::map<std::string, int>& corpus_word_counts, const std::string& outputPath) {
-    this->statOfEmbeddings.clear();
-
-    auto is_word_for_bpe = [](const std::string& s) -> bool {
-        // A robust check for what constitutes a "word" split by BPE
-        return !s.empty() && std::isalpha(static_cast<unsigned char>(s[0]));
-    };
-
-    std::cout << "Calculating final token statistics from " << corpus_word_counts.size() << " unique raw tokens..." << std::endl;
-    // Iterate over unique words only
-    int i = 0;
-    for (const auto& pair : corpus_word_counts) {
-        i++;
-        if(i%10000 == 0) std::cout << i << " ";
-        const std::string& pre_token = pair.first;
-        const int count = pair.second;
-
-        if (is_word_for_bpe(pre_token)) {
-            std::vector<std::string> subwords;
-            this->splitWord(pre_token, subwords); // Tokenize the unique word once
-            for (const auto& subword : subwords) {
-                // Add the total count of the original word to its sub-tokens
-                this->statOfEmbeddings[subword] += count;
-            }
-        }
-        else {
-            // For punctuation/symbols, the token is the subword
-            this->statOfEmbeddings[pre_token] += count;
-        }
-    }
-    std::cout << std::endl;
-    std::cout << "Calculation complete. Found " << this->statOfEmbeddings.size() << " final BPE tokens." << std::endl;
-
-    if (!outputPath.empty()) {
-        std::cout << "\n-> Sorting and saving token statistics to: " << outputPath << std::endl;
-        
-        // 1. Copy the map contents to a vector of pairs for sorting.
-        std::vector<std::pair<std::string, int>> sorted_stats(
-            this->statOfEmbeddings.begin(),
-            this->statOfEmbeddings.end()
-        );
-
-        // 2. Sort the vector. The default sort for pairs will use the first element (the string)
-        //    for comparison, which provides standard alphanumeric sorting.
-        std::sort(sorted_stats.begin(), sorted_stats.end(), 
-            [](const auto& a, const auto& b) {
-                return a.first < b.first; // Explicitly sort by token string (the key)
-            }
-        );
-
-        // 3. Write the sorted vector to the file.
-        std::ofstream outFile(outputPath);
-        if (!outFile.is_open()) {
-            std::cerr << "Warning: Could not open file to save token stats: " << outputPath << std::endl;
-            return;
-        }
-        outFile << "token,repetitions\n";
-        for (const auto& pair : sorted_stats) {
-            const std::string& token = pair.first;
-            // Handle tokens that might contain commas or quotes
-            std::string escaped_token;
-            for (char c : token) {
-                if (c == '"') escaped_token += "\"\"";
-                else escaped_token += c;
-            }
-            outFile << "\"" << escaped_token << "\"," << pair.second << "\n";
-        }
-        outFile.close();
-        std::cout << "-> Successfully saved sorted statistics file." << std::endl;
-    }
-    else {
-        std::cout << "\nOutput path is empty. Skipped saving statistics file." << std::endl;
-    }
+    std::cout << "-> Aggregation complete. Total unique tokens: " << corpus_word_counts.size() << std::endl;
 }

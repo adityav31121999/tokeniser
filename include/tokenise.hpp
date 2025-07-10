@@ -1,3 +1,4 @@
+// header file
 #ifndef TOKENISE_HPP
 #define TOKENISE_HPP 1
 
@@ -11,7 +12,34 @@
 #include <mutex>                 // For std::mutex, std::lock_guard
 #include <condition_variable>    // For std::condition_variable
 #include <unordered_map>         // For the much faster hash map
+#include <regex>
+#include <algorithm>
+#include <future>
 #include "clcontext.hpp"
+
+struct PairHash {
+    std::size_t operator()(const std::pair<std::string, std::string>& p) const {
+        std::size_t h1 = std::hash<std::string>{}(p.first);
+        std::size_t h2 = std::hash<std::string>{}(p.second);
+        return h1 ^ (h2 << 1);
+    }
+};
+
+/**
+ * @brief A struct to hold shared progress data for logging.
+ * Protected by a mutex.
+ */
+struct ProgressData {
+    std::mutex mtx;
+    std::condition_variable cv;
+    long long total_bytes = 0;
+    long long bytes_read = 0;
+    size_t files_completed_count = 0;
+    std::string last_file_completed;
+    int merges_completed = 0;
+    int total_merges = 0;
+    std::chrono::steady_clock::time_point start_time;
+};
 
 
 /**
@@ -21,22 +49,24 @@
 class tokeniser {
 private:
     int d;          // embedding dimension
-    int vocSize;    // vocabulary size
+    int vocSize;    // vocabulary size (number of merges performed while BPE algorithm)
     int d_val;      // divisor (makes it look like repeatation)
 
     std::string path2data;                          // path to dataset
     std::vector<std::string> tokens;                // all possible tokens
-    std::vector<float> seeds;                       // seeds for all tokens
+    std::vector<float> seeds;                       // seeds for all tokens (seeds.csv)
     std::vector<std::vector<float>> embeddings;     // vector for each token of dimension d
     std::vector<std::vector<float>> deEmbeddings;   // inverse of each token of dimension d
-    // map of tokens and their embeddings
-    std::map<std::string, std::vector<float>> mappedEmbeddings;
-    std::map<std::string, int> statOfEmbeddings;    // hold tokens and their stats
+    // map of tokens and their embeddings (embeddings.csv)
+    std::unordered_map<std::string, std::vector<float>> mappedEmbeddings;
+    std::unordered_map<std::string, int> corpusWordCount; // NEW (or similar if it's not a member)
+    std::unordered_map<std::string, int> statOfEmbeddings;    // hold tokens and their stats (unique_tokens.csv)
 
 public:
 
-    int num_threads;                                // number of threads
-    int corpusWordCount;                            // corpus word count
+    int num_threads;                        // number of threads
+    int totalCorpusWordCount;               // corpus word count
+    ProgressData bpe_progress;              // track progress throughout for tokenisation
 
 // constructors
     // default constructors
@@ -47,44 +77,6 @@ public:
     explicit tokeniser(const std::string& path2data, int d, int d_val) noexcept;
     tokeniser(const tokeniser& toBeCopied) noexcept;
     tokeniser(tokeniser&& toBeMoved) noexcept;
-
-// programs for setting values
-    void setEmbeddingDimension(int d);
-    void setDval(int d_val);
-    void setVocabularySize(int vocSize);
-    void setNumThreads();
-    void setEmbedding(const std::string& token, std::vector<float> embedding);
-
-    // Getters for read-only access to internal state
-    int getEmbeddingDimension() const { return d; }
-    int getDval() const { return d_val; }
-    int getVocabularySize() const { return vocSize; }
-    const std::map<std::string, int>& getTokenStats() const { return statOfEmbeddings; }
-    const std::vector<std::string>& getTokens() const { return tokens; }
-    const std::map<std::string, std::vector<float>>& getMappedEmbeddings() const { return mappedEmbeddings; }
-    const std::vector<float>& getSeeds() const { return seeds; }
-    const std::vector<std::vector<float>>& getEmbeddings() const { return embeddings; }
-    const std::vector<std::vector<float>>& getDeEmbeddings() const { return deEmbeddings; }
-    std::vector<float> getEmbeddingForToken(const std::string& token) const;
-    std::vector<float> getEmbeddingForToken(int index) const { return embeddings[index]; };
-
-    void splitWord(const std::string& word, std::vector<std::string>& subwords) const;
-    void splitSentence(const std::string& sentence, std::vector<std::string>& all_subwords) const;
-    void splitWordsFromTxt(const std::string& path2txt, std::vector<std::string>& words);
-    void splitWordsFromCSV(const std::string& path2csv, std::vector<std::string>& tokens);
-    void groupCommonTokens(std::vector<std::string>& words, int num_merges, std::vector<std::string>& final_vocab);
-
-    void learn_vocabulary_from_word_counts(const std::map<std::string, int>& corpus_word_counts, int num_merges, std::vector<std::string>& final_vocab);
-    void splitWordsFromTxtParallel(const std::string& path2txt, std::vector<std::string>& words);
-    void buildCorpusWordCountsParallel(const std::vector<std::string>& file_paths, std::map<std::string, int>& corpus_word_counts);
-    void groupCommonTokensParallel(std::vector<std::string>& words, int num_merges, std::vector<std::string>& final_vocab);
-    void groupCommonTokensParallel(const std::map<std::string, int>& corpus_word_counts, int num_merges, std::vector<std::string>& final_vocab);
-
-    void saveUniqueTokensToCSV(const std::map<std::string, int>& corpus_word_counts, const std::string& outputPath);
-
-    void calculateTokenStatsFromCounts(const std::map<std::string, int>& corpus_word_counts, const std::string& outputPath);
-    void calculateTokenStats(const std::vector<std::string>& pre_tokens, const std::string& outputPath);
-    std::vector<std::string> tokeniseFile(const std::string& filePath) const;
 
     /**
      * a generic lambda that implements the mathematical formula:
@@ -102,18 +94,48 @@ public:
         return intermediate_val;
     };
 
+    // programs for setting values
+    void setEmbeddingDimension(int d);
+    void setDval(int d_val);
+    void setVocabularySize(int vocSize);
+    void setNumThreads();
+    void setEmbedding(const std::string& token, std::vector<float> embedding);
+    void readFromFiles(const std::string& path2ClassDataFolder);
+
+    // Getters for read-only access to internal state
+    int getEmbeddingDimension() const { return d; }
+    int getDval() const { return d_val; }
+    int getVocabularySize() const { return vocSize; }
+    const std::unordered_map<std::string, int>& getTokenStats() const { return statOfEmbeddings; }
+    const std::vector<std::string>& getTokens() const { return tokens; }
+    const std::unordered_map<std::string, std::vector<float>>& getMappedEmbeddings() const { return mappedEmbeddings; }
+    const std::vector<float>& getSeeds() const { return seeds; }
+    const std::vector<std::vector<float>>& getEmbeddings() const { return embeddings; }
+    const std::vector<std::vector<float>>& getDeEmbeddings() const { return deEmbeddings; }
+    std::vector<float> getEmbeddingForToken(int index) const { return embeddings[index]; };
+    std::vector<float> getEmbeddingForToken(const std::string& token) const;
+
+    void splitWord(const std::string& word, std::vector<std::string>& subwords) const;
+    void splitSentence(const std::string& sentence, std::vector<std::string>& all_subwords) const;
+    void buildCorpusWordCounts(const std::vector<std::string>& file_paths, std::unordered_map<std::string, int>& corpus_word_counts);
+    void groupCommonTokens(const std::unordered_map<std::string, int>& corpus_word_counts, int num_merges, std::vector<std::string>& final_vocab);
+    void learn_vocabulary_from_word_counts(const std::unordered_map<std::string, int>& corpus_word_counts, int num_merges, std::vector<std::string>& final_vocab);
+    void saveUniqueTokensToCSV(const std::unordered_map<std::string, int>& corpus_word_counts, const std::string& outputPath);
+    void calculateTokenStatsFromCounts(const std::unordered_map<std::string, int>& corpus_word_counts, const std::string& outputPath);
+    void calculateTokenStats(const std::vector<std::string>& pre_tokens, const std::string& outputPath);
+
     void seedsForEmbedding(float r1, float r2);
     float embeddingFormula(int i, int j, float seed);
     std::vector<float> embeddingFormula(int i, float seed);
     void generateAndSaveEmbeddings(const std::string& outputPath, float r1, float r2);
 
     #ifdef USE_CUDA
-    void cuEmbeddingFormula(std::vector<std::vector<float>>& embedding, const std::vector<float>& seeds, int& d, int& vocSize);
-    void cuVectorInverse(std::vector<std::vector<float>>& deEmbedding, const std::vector<std::vector<float>>& embedding, int& d, int& vocSize);
+        void cuEmbeddingFormula(std::vector<std::vector<float>>& embedding, const std::vector<float>& seeds, int& d, int& vocSize);
+        void cuVectorInverse(std::vector<std::vector<float>>& deEmbedding, const std::vector<std::vector<float>>& embedding, int& d, int& vocSize);
     #elif USE_OPENCL
-    OpenCLContext ocl;
-    void clEmbeddingFormula(OpenCLContext& ocl, std::vector<std::vector<float>>& embedding, const std::vector<float>& seeds, int& d, int& vocSize);
-    void clVectorInverse(OpenCLContext& ocl, std::vector<std::vector<float>>& deEmbedding, const std::vector<std::vector<float>>& embedding, int& d, int& vocSize);
+        OpenCLContext ocl;
+        void clEmbeddingFormula(OpenCLContext& ocl, std::vector<std::vector<float>>& embedding, const std::vector<float>& seeds, int& d, int& vocSize);
+        void clVectorInverse(OpenCLContext& ocl, std::vector<std::vector<float>>& deEmbedding, const std::vector<std::vector<float>>& embedding, int& d, int& vocSize);
     #endif
 
     ~tokeniser() = default;
@@ -170,48 +192,58 @@ public:
 };
 
 
-/**
- * @brief A struct to hold shared progress data for logging.
- * Protected by a mutex.
- */
-struct ProgressData {
-    std::mutex mtx;
-    std::condition_variable cv;
-    long long total_bytes = 0;
-    long long bytes_read = 0;
-    size_t files_completed_count = 0;
-    std::string last_file_completed;
-};
-
-
-struct PairHash {
-    template <class T1, class T2>
-    std::size_t operator() (const std::pair<T1, T2> &p) const {
-        auto h1 = std::hash<T1>{}(p.first);
-        auto h2 = std::hash<T2>{}(p.second);
-        // A common way to combine two hash values.
-        return h1 ^ (h2 << 1);
-    }
-};
-
-
-std::vector<std::string> pre_split_word(const std::string& word);
-std::map<std::pair<std::string, std::string>, int> get_pair_stats(const std::map<std::string, int>& word_counts,
-    const std::map<std::string, std::vector<std::string>>& splits);
-void merge_pair(const std::pair<std::string, std::string>& best_pair, std::map<std::string, std::vector<std::string>>& splits);
-std::map<std::pair<std::string, std::string>, int> parallel_get_pair_stats(const std::map<std::string, int>& word_counts,
-    const std::map<std::string, std::vector<std::string>>& splits, int num_threads);
-void parallel_merge_pair(const std::pair<std::string, std::string>& best_pair, std::map<std::string, std::vector<std::string>>& splits,
-    int num_threads);
-void merge_maps(std::map<std::string, int>& destination, std::map<std::string, int>& source);
-void splitFileUsingTerminator(const std::string& originalFile, const std::string& newFile, const std::string& terminator);
+std::vector<std::string_view> pre_split_word(std::string_view word);
+std::unordered_map<std::pair<std::string, std::string>, int, PairHash> get_pair_stats(const std::unordered_map<std::string, int>& word_counts, const std::unordered_map<std::string, std::vector<std::string>>& splits);
+void merge_pair(const std::pair<std::string, std::string>& best_pair, std::unordered_map<std::string, std::vector<std::string>>& splits, int num_threads);
+std::unordered_map<std::string, int> mergeTwoMaps(std::unordered_map<std::string, int> map1, std::unordered_map<std::string, int> map2);
+std::future<std::unordered_map<std::string, int>> merge_maps(std::vector<std::future<std::unordered_map<std::string, int>>>& futures,size_t start_idx, size_t end_idx);
 std::vector<float> vectorInverse(const std::vector<float>& vec);
-std::vector<std::string> pre_tokenize_word_by_corpus_freq(const std::string& word, const std::map<std::string, int>& corpus_word_counts);
+std::vector<std::string> pre_tokenize_word_by_corpus_freq(const std::string& word, const std::unordered_map<std::string, int>& corpus_word_counts);
 
 #ifdef USE_CUDA
-// kernel for embedding calculation
-// kernel for vector inverse calculation
 
+#include <cuda.h>
+#include <cuda_runtime.h>
+#include <device_launch_parameters.h>
+
+// kernel for embedding calculation
+__global__ void embeddingFormulaBatchKernel(float* all_embeddings, const float* all_seeds, 
+            const int N, const int d);
+// kernel for vector inverse calculation
+__global__ void batchedVectorInverseKernel(float* output, const float* input, int N, int d);
 #endif
+
+inline bool contains_alpha(const std::string& s) {
+    for (char c : s) {
+        if (std::isalpha(static_cast<unsigned char>(c))) {
+            return true;
+        }
+    }
+    return false;
+}
+
+inline bool is_all_digits(const std::string& s) {
+    if (s.empty()) return false;
+    for (char c : s) {
+        if (!std::isdigit(static_cast<unsigned char>(c))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Definition for contains_only_punctuation
+inline bool contains_only_punctuation(const std::string& s) {
+    if (s.empty()) return false;
+    for (char c : s) {
+        // You might want to refine what's considered "punctuation" here.
+        // std::ispunct includes things like parentheses, brackets, etc.
+        if (!std::ispunct(static_cast<unsigned char>(c))) {
+            return false;
+        }
+    }
+    return true;
+}
+
 
 #endif

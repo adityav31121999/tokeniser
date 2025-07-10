@@ -46,7 +46,8 @@ __global__ void embeddingFormulaBatchKernel(float* all_embeddings, const float* 
  * @param N The number of vectors (rows).
  * @param d The dimension of each vector (columns).
  */
-__global__ void batchedVectorInverseKernel(float* output, const float* input, int N, int d) {
+__global__ void batchedVectorInverseKernel(float* output, const float* input, int N, int d) 
+{
     // Use dynamic shared memory, sized by the kernel launch.
     // This will hold the values for the reduction.
     extern __shared__ float s_data[];
@@ -155,7 +156,7 @@ void tokeniser::cuEmbeddingFormula(std::vector<std::vector<float>>& embedding,
  * @param d [in] The dimension of each vector.
  * @param vocSize [in] The number of vectors.
  */
-void cuVectorInverse(std::vector<std::vector<float>>& deEmbedding,
+void tokeniser::cuVectorInverse(std::vector<std::vector<float>>& deEmbedding,
     const std::vector<std::vector<float>>& embedding, int& d, int& vocSize)
 {
     if (vocSize == 0 || d == 0) return;

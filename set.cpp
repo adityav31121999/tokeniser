@@ -13,6 +13,14 @@ void tokeniser::setEmbeddingDimension(int d) {
     this->d = d;
 }
 
+/**
+ * @brief set divisor for embedding calculation
+ * @param d_val divisor for embedding
+ */
+void tokeniser::setDval(int d_val) {
+    // Set the divisor for the embeddings.
+    this->d_val = d_val;
+}
 
 /**
  * @brief set total vocabulary size
