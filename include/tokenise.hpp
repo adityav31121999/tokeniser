@@ -208,10 +208,13 @@ std::future<std::unordered_map<std::string, int>> merge_maps(std::vector<std::fu
 std::vector<float> vectorInverse(const std::vector<float>& vec);
 std::vector<std::string> pre_tokenize_word_by_corpus_freq(const std::string& word, const std::unordered_map<std::string, int>& corpus_word_counts);
 
+std::string trim(const std::string& str);
+std::string removeQuotes(const std::string& str);
+bool isHeaderLine(const std::string& line);
 std::vector<std::string> readSingleColumnCsv(const std::string& filename);
 std::vector<std::string> readSpecificColumnFromCsv(const std::string& filename, int targetColumnIndex);
 std::vector<std::vector<std::string>> readCsvTo2DVector(const std::string& filename);
-std::unordered_map<std::string, int> readCorpusWordCount(const std::string& filename);
+std::unordered_map<std::string, int> readUnorderedMap(const std::string& filename);
 std::unordered_map<std::string, std::vector<float>> readMappedEmbeddings(const std::string& filename);
 
 #ifdef USE_CUDA
