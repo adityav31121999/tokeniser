@@ -5,6 +5,36 @@
 #include <string_view>
 #include <regex>
 
+#ifdef USE_OPENCL
+
+/**
+ * @brief constructor for tokeniser (use dimensions directly)
+ * @param d dimension for embedding
+ */
+tokeniser::tokeniser(int d, OpenCLContext& context) : d(d), ocl(context) {}
+
+/**
+ * @brief constructor for tokeniser (use dimensions directly)
+ * @param d dimension for embedding
+ * @param vocSize vocabulary size
+ */
+tokeniser::tokeniser(int d, int d_val, OpenCLContext& context) : d(d), d_val(d_val), ocl(context) {}
+
+/**
+ * @brief constructor for tokeniser (use data set directly)
+ * @param path2data path to folder with all dataset files
+ */
+tokeniser::tokeniser(const std::string& path2data, OpenCLContext& context) noexcept : path2data(path2data), ocl(context) 
+{
+    this->mappedEmbeddings = readMappedEmbeddings(path2data + "/_final_embeddings.csv");
+    this->statOfTokens = readCorpusWordCount(path2data + "/_final_token_stats.csv");
+    this->vocSize = this->statOfTokens.size() - 1;
+    this->d = this->mappedEmbeddings.begin()->second.size() - 1;
+}
+
+
+#elif USE_CUDA || USE_CPU
+
 /**
  * @brief constructor for tokeniser (use dimensions directly)
  * @param d dimension for embedding
@@ -22,16 +52,16 @@ tokeniser::tokeniser(int d, int d_val) : d(d), d_val(d_val) {}
  * @brief constructor for tokeniser (use data set directly)
  * @param path2data path to folder with all dataset files
  */
-tokeniser::tokeniser(const std::string& path2data) noexcept : path2data(path2data) {}
+tokeniser::tokeniser(const std::string& path2data) noexcept : path2data(path2data)
+{
+    this->mappedEmbeddings = readMappedEmbeddings(path2data + "/_final_embeddings.csv");
+    this->statOfTokens = readCorpusWordCount(path2data + "/_final_token_stats.csv");
+    this->vocSize = this->statOfTokens.size() - 1;
+    this->d = this->mappedEmbeddings.begin()->second.size() - 1;
+}
 
-/**
- * @brief constructor for tokeniser
- * @param d dimension for embedding
- * @param vocSize vocabulary size
- * @param path2data path to folder with all dataset files
- */ 
-tokeniser::tokeniser(const std::string& path2data, int d, int d_val) noexcept
-    : path2data(path2data), d(d), d_val(d_val) {}
+#endif
+
 
 /**
  * @brief copy constructor
@@ -46,7 +76,11 @@ tokeniser::tokeniser(const tokeniser& toBeCopied) noexcept // Corrected paramete
       seeds(toBeCopied.seeds),
       deEmbeddings(toBeCopied.deEmbeddings),
       mappedEmbeddings(toBeCopied.mappedEmbeddings)
-{}
+{
+    #ifdef USE_OPENCL
+        ocl = toBeCopied.ocl;
+    #endif
+}
 
 /**
  * @brief move constructor
@@ -61,7 +95,11 @@ tokeniser::tokeniser(tokeniser&& toBeMoved) noexcept
       seeds(std::move(toBeMoved.seeds)),
       deEmbeddings(std::move(toBeMoved.deEmbeddings)),
       mappedEmbeddings(std::move(toBeMoved.mappedEmbeddings))
-{}
+{
+    #ifdef USE_OPENCL
+        ocl = toBeMoved.ocl;
+    #endif
+}
 
 
 // Helper function to allow splitting file_paths among producers

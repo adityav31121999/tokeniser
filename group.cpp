@@ -29,17 +29,13 @@
 void tokeniser::groupCommonTokens(const std::unordered_map<std::string, int>& corpus_word_counts, int num_merges, 
     std::vector<std::string>& final_vocab) 
 {
-    // =========================================================================
     // 1. INITIAL SETUP
-    // =========================================================================
     std::set<std::string> vocab;
     std::map<std::string, int> bpe_word_counts;
     std::map<std::string, std::vector<std::string>> splits;
 
     // A robust check for what constitutes a "word" to be split by BPE.
     auto is_word_for_bpe = [](const std::string& s) {
-        // Must not be empty, must start with a letter, and must be longer than 1 character
-        // to be eligible for splitting. Single-letter words are atomic.
         return !s.empty() && std::isalpha(static_cast<unsigned char>(s[0])) && s.length() > 1;
     };
 
@@ -86,9 +82,7 @@ void tokeniser::groupCommonTokens(const std::unordered_map<std::string, int>& co
     }
     std::cout << std::endl;
 
-    // =========================================================================
     // 2. BUILD INITIAL STATS AND INVERTED INDEX (ONCE!)
-    // =========================================================================
     std::cout << "Building initial statistics and inverted index..." << std::endl;
     std::map<std::pair<std::string, std::string>, int> pair_stats;
     std::map<std::pair<std::string, std::string>, std::vector<std::string>> inverted_index;
@@ -106,9 +100,7 @@ void tokeniser::groupCommonTokens(const std::unordered_map<std::string, int>& co
 
     std::cout << "[DEBUG] Size of initial pair_stats map: " << pair_stats.size() << ". Initialization complete. Starting merges." << std::endl;
 
-    // =========================================================================
     // 3. HIGH-SPEED MERGE LOOP
-    // =========================================================================
     std::cout << "Merge Count:" << std::endl;
     for (int i = 0; i < num_merges; ++i) {
         if (pair_stats.empty()) {
@@ -178,9 +170,8 @@ void tokeniser::groupCommonTokens(const std::unordered_map<std::string, int>& co
         }
     }
 
-    // =========================================================================
     // 4. FINALIZE VOCABULARY
-    // =========================================================================
+    final_vocab.push_back("<@#0>");     // add sentence terminator token "<@#0>"
     final_vocab.assign(vocab.begin(), vocab.end());
     std::sort(final_vocab.begin(), final_vocab.end(), [](const auto& a, const auto& b){ return a.length() > b.length(); });
 

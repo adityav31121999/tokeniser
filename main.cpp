@@ -25,15 +25,22 @@ int main()
     try {
         const int embeddingDimension = 64;      // embedding dimension
         const int d_val = 4;                    // Your original divisor for the formula
-        const int num_merges = 24576;           // 2^n or its multiple (8192 * 3 = 2^13 * 3)
+        const int num_merges = 24576;           // = 2^n and its multiples (24576 = 8192 * 3)
         const std::string path2folder = "D:/train/txt";
+        // paths to all csv files
         const std::string unique_tokens_output_path = "D:/train/_unique_initial_tokens.csv";
         const std::string stats_output_path = "D:/train/_final_token_stats.csv";
         const std::string embeddings_output_path = "D:/train/_final_embeddings.csv";
-        // Create and configure the tokenizer instance
-        tokeniser TOKENISER(embeddingDimension, d_val);
-        TOKENISER.setNumThreads(); // Automatically set to use max threads
+        const std::string seed_output_path = "D:/train/_seedsForEmbeddings.csv";
 
+        // Create and configure the tokenizer instance
+    #ifdef USE_OPENCL
+        tokeniser TOKENISER(embeddingDimension, d_val, ocl);
+    #elif USE_CUDA || USE_CPU
+        tokeniser TOKENISER(embeddingDimension, d_val);
+    #endif
+
+        TOKENISER.setNumThreads(); // Automatically set to use max threads
         std::cout << "-> Number of threads for CPU: " << TOKENISER.num_threads << std::endl;
         #ifdef USE_OPENCL
             TOKENISER.ocl = ocl;
@@ -71,13 +78,12 @@ int main()
         // Step A: Calculate statistics based on the final BPE vocabulary
         TOKENISER.calculateTokenStatsFromCounts(corpus_word_counts, stats_output_path);
         // Step B: Generate embeddings using original formula
-        TOKENISER.generateAndSaveEmbeddings(embeddings_output_path, -10.0f, 10.0f);
+        TOKENISER.generateAndSaveEmbeddings(embeddings_output_path, seed_output_path, -10.0f, 10.0f);
 
         std::cout << "--------------------- 4. INFERENCE DEMO ---------------------" << std::endl;
         std::string test_sentence = "This is a test sentence for christianity and its international relationships to see the new tokenizer in action. Hence, need more words to see whether it will work or not, if not rework the code logic and try again. This tokeniser is (BPE) is supercalifragilisticexpialidocious at the ludicrous speed. Ludicrous speed can be given by higher multiple of light speed which is 2.9 * 10^8 m/s.";
         std::vector<std::string> tokenized_sentence;
         TOKENISER.splitSentence(test_sentence, tokenized_sentence);
-        
         std::cout << "Original: \"" << test_sentence << "\"" << std::endl;
         std::cout << "Tokenized: { ";
         for (const auto& token : tokenized_sentence) {
@@ -91,6 +97,8 @@ int main()
         std::cout << "------------------------ PROCESS FAILED ------------------------" << std::endl;
         return 1;
     }
+
+
     std::cout << "-------------------------------------------------------------" << std::endl;
     std::cout << "----------------------- PROCESS COMPLETE --------------------" << std::endl;
     std::cout << "-------------------------------------------------------------" << std::endl;

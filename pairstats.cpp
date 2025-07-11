@@ -11,9 +11,10 @@
  * @param corpus_word_counts Map of unique words and their frequencies.
  * @param outputPath Path to save the statistics CSV file.
  */
-void tokeniser::calculateTokenStatsFromCounts(const std::unordered_map<std::string, int>& corpus_word_counts, const std::string& outputPath) {
-    // IMPORTANT: Assuming statOfEmbeddings is now std::unordered_map in tokenise.hpp
-    this->statOfEmbeddings.clear(); 
+void tokeniser::calculateTokenStatsFromCounts(const std::unordered_map<std::string, int>& corpus_word_counts, 
+    const std::string& outputPath) 
+{
+    this->statOfTokens.clear(); 
 
     auto is_word_for_bpe = [](const std::string& s) -> bool {
         return !s.empty() && std::isalpha(static_cast<unsigned char>(s[0]));
@@ -24,9 +25,6 @@ void tokeniser::calculateTokenStatsFromCounts(const std::unordered_map<std::stri
     const int num_threads = this->num_threads > 0 ? this->num_threads : 1;
     std::vector<std::future<std::unordered_map<std::string, int>>> futures;
 
-    // Divide work among threads
-    // Create iterators for the map to define chunks.
-    // Iterators for std::map are not random access, so std::advance is used carefully.
     auto it = corpus_word_counts.begin();
     size_t total_items = corpus_word_counts.size();
     size_t chunk_size = (total_items + num_threads - 1) / num_threads; // Ceiling division
@@ -34,7 +32,7 @@ void tokeniser::calculateTokenStatsFromCounts(const std::unordered_map<std::stri
     for (int t = 0; t < num_threads; ++t) {
         auto chunk_start = it;
         // Advance iterator, ensuring we don't go past the end.
-        std::advance(it, std::min(chunk_size, (size_t)std::distance(it, corpus_word_counts.end())));
+        std::advance(it, std::min<int>(chunk_size, (size_t)std::distance(it, corpus_word_counts.end())));
         auto chunk_end = it;
 
         if (chunk_start == chunk_end) {
@@ -66,7 +64,7 @@ void tokeniser::calculateTokenStatsFromCounts(const std::unordered_map<std::stri
         }));
     }
 
-    // Aggregate results from all threads into the main statOfEmbeddings (unordered_map)
+    // Aggregate results from all threads into the main statOfTokens (unordered_map)
     std::cout << "Aggregating parallel statistics: ";
     int merge_count = 0;
     for (auto& f : futures) {
@@ -74,19 +72,19 @@ void tokeniser::calculateTokenStatsFromCounts(const std::unordered_map<std::stri
         std::cout << merge_count << " ";
         auto local_map = f.get(); // Retrieve the unordered_map from the future
         for (const auto& pair : local_map) {
-            this->statOfEmbeddings[pair.first] += pair.second; // Merge into global unordered_map
+            this->statOfTokens[pair.first] += pair.second; // Merge into global unordered_map
         }
     }
     std::cout << std::endl;
-    std::cout << "Calculation complete. Found " << this->statOfEmbeddings.size() << " final BPE tokens." << std::endl;
+    std::cout << "Calculation complete. Found " << this->statOfTokens.size() << " final BPE tokens." << std::endl;
 
     if (!outputPath.empty()) {
-        std::cout << "\n-> Sorting and saving token statistics to: " << outputPath << std::endl;
+        std::cout << "-> Sorting and saving token statistics to: " << outputPath << std::endl;
         
         // 1. Copy the unordered_map contents to a vector of pairs for sorting.
         std::vector<std::pair<std::string, int>> sorted_stats(
-            this->statOfEmbeddings.begin(),
-            this->statOfEmbeddings.end()
+            this->statOfTokens.begin(),
+            this->statOfTokens.end()
         );
 
         // 2. Sort the vector.
@@ -134,6 +132,7 @@ void tokeniser::calculateTokenStatsFromCounts(const std::unordered_map<std::stri
         std::cout << "\nOutput path is empty. Skipped saving statistics file." << std::endl;
     }
 }
+
 
 /**
  * @brief Saves all unique tokens (words and punctuation) to a single-column CSV file.

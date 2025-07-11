@@ -90,7 +90,7 @@ void merge_pair(const std::pair<std::string, std::string>& best_pair,
     futures.reserve(num_threads);
 
     // Calculate effective number of threads if there are fewer words than threads
-    int effective_num_threads = std::min(num_threads, (int)keys_to_update.size());
+    int effective_num_threads = std::min<int>(num_threads, (int)keys_to_update.size());
     if (effective_num_threads == 0) return; // Should not happen if keys_to_update is not empty
 
     size_t chunk_size = keys_to_update.size() / effective_num_threads;

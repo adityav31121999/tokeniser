@@ -2,6 +2,7 @@
 #ifndef TOKENISE_HPP
 #define TOKENISE_HPP 1
 
+#include "clcontext.hpp"
 #include <string>
 #include <vector>
 #include <set>
@@ -15,8 +16,8 @@
 #include <regex>
 #include <algorithm>
 #include <future>
-#include "clcontext.hpp"
 
+// for fast multithreading operations
 struct PairHash {
     std::size_t operator()(const std::pair<std::string, std::string>& p) const {
         std::size_t h1 = std::hash<std::string>{}(p.first);
@@ -24,6 +25,7 @@ struct PairHash {
         return h1 ^ (h2 << 1);
     }
 };
+
 
 /**
  * @brief A struct to hold shared progress data for logging.
@@ -59,8 +61,8 @@ private:
     std::vector<std::vector<float>> deEmbeddings;   // inverse of each token of dimension d
     // map of tokens and their embeddings (embeddings.csv)
     std::unordered_map<std::string, std::vector<float>> mappedEmbeddings;
-    std::unordered_map<std::string, int> corpusWordCount; // NEW (or similar if it's not a member)
-    std::unordered_map<std::string, int> statOfEmbeddings;    // hold tokens and their stats (unique_tokens.csv)
+    std::unordered_map<std::string, int> corpusWordCount;   // NEW (or similar if it's not a member)
+    std::unordered_map<std::string, int> statOfTokens;      // hold tokens and their stats (unique_tokens.csv)
 
 public:
 
@@ -70,13 +72,19 @@ public:
 
 // constructors
     // default constructors
+#ifdef USE_OPENCL
+    tokeniser(int d, OpenCLContext& context);
+    tokeniser(int d, int d_val, OpenCLContext& context);
+    explicit tokeniser(const std::string& path2data, OpenCLContext& context) noexcept;
+#elif USE_CUDA || USE_CPU
     tokeniser() = default;
     tokeniser(int d);
     tokeniser(int d, int d_val);
     explicit tokeniser(const std::string& path2data) noexcept;
-    explicit tokeniser(const std::string& path2data, int d, int d_val) noexcept;
-    tokeniser(const tokeniser& toBeCopied) noexcept;
-    tokeniser(tokeniser&& toBeMoved) noexcept;
+#endif
+
+    tokeniser(const tokeniser& toBeCopied) noexcept;        // copy constructor
+    tokeniser(tokeniser&& toBeMoved) noexcept;              // move constructor
 
     /**
      * a generic lambda that implements the mathematical formula:
@@ -106,7 +114,7 @@ public:
     int getEmbeddingDimension() const { return d; }
     int getDval() const { return d_val; }
     int getVocabularySize() const { return vocSize; }
-    const std::unordered_map<std::string, int>& getTokenStats() const { return statOfEmbeddings; }
+    const std::unordered_map<std::string, int>& getTokenStats() const { return statOfTokens; }
     const std::vector<std::string>& getTokens() const { return tokens; }
     const std::unordered_map<std::string, std::vector<float>>& getMappedEmbeddings() const { return mappedEmbeddings; }
     const std::vector<float>& getSeeds() const { return seeds; }
@@ -124,10 +132,10 @@ public:
     void calculateTokenStatsFromCounts(const std::unordered_map<std::string, int>& corpus_word_counts, const std::string& outputPath);
     void calculateTokenStats(const std::vector<std::string>& pre_tokens, const std::string& outputPath);
 
-    void seedsForEmbedding(float r1, float r2);
+    void seedsForEmbedding(float r1, float r2,const std::string& seedCSVpath);
     float embeddingFormula(int i, int j, float seed);
     std::vector<float> embeddingFormula(int i, float seed);
-    void generateAndSaveEmbeddings(const std::string& outputPath, float r1, float r2);
+    void generateAndSaveEmbeddings(const std::string& outputPath, const std::string& seedCSVpath, float r1, float r2);
 
     #ifdef USE_CUDA
         void cuEmbeddingFormula(std::vector<std::vector<float>>& embedding, const std::vector<float>& seeds, int& d, int& vocSize);
@@ -200,6 +208,12 @@ std::future<std::unordered_map<std::string, int>> merge_maps(std::vector<std::fu
 std::vector<float> vectorInverse(const std::vector<float>& vec);
 std::vector<std::string> pre_tokenize_word_by_corpus_freq(const std::string& word, const std::unordered_map<std::string, int>& corpus_word_counts);
 
+std::vector<std::string> readSingleColumnCsv(const std::string& filename);
+std::vector<std::string> readSpecificColumnFromCsv(const std::string& filename, int targetColumnIndex);
+std::vector<std::vector<std::string>> readCsvTo2DVector(const std::string& filename);
+std::unordered_map<std::string, int> readCorpusWordCount(const std::string& filename);
+std::unordered_map<std::string, std::vector<float>> readMappedEmbeddings(const std::string& filename);
+
 #ifdef USE_CUDA
 
 #include <cuda.h>
@@ -212,38 +226,5 @@ __global__ void embeddingFormulaBatchKernel(float* all_embeddings, const float* 
 // kernel for vector inverse calculation
 __global__ void batchedVectorInverseKernel(float* output, const float* input, int N, int d);
 #endif
-
-inline bool contains_alpha(const std::string& s) {
-    for (char c : s) {
-        if (std::isalpha(static_cast<unsigned char>(c))) {
-            return true;
-        }
-    }
-    return false;
-}
-
-inline bool is_all_digits(const std::string& s) {
-    if (s.empty()) return false;
-    for (char c : s) {
-        if (!std::isdigit(static_cast<unsigned char>(c))) {
-            return false;
-        }
-    }
-    return true;
-}
-
-// Definition for contains_only_punctuation
-inline bool contains_only_punctuation(const std::string& s) {
-    if (s.empty()) return false;
-    for (char c : s) {
-        // You might want to refine what's considered "punctuation" here.
-        // std::ispunct includes things like parentheses, brackets, etc.
-        if (!std::ispunct(static_cast<unsigned char>(c))) {
-            return false;
-        }
-    }
-    return true;
-}
-
 
 #endif
