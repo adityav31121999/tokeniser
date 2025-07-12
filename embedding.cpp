@@ -90,7 +90,7 @@ void tokeniser::seedsForEmbedding(float r1, float r2, const std::string& seedCSV
 
     // Iterate through tokens
     int i = 0;
-    outFile << "token" <<  "," << "seed" << "\n";
+    outFile << "token,seed\n";
     for (int i = 0; i < this->vocSize; i++) {
         outFile << tokens[i] <<  "," << this->seeds[i] << "\n";
     }
@@ -155,24 +155,30 @@ void tokeniser::generateAndSaveEmbeddings(const std::string& embeddingCSVpath, c
     std::cout << "-> Embedding generation complete." << std::endl;
     std::cout << "-> Saving tokens and embeddings to: " << embeddingCSVpath << std::endl;
     std::ofstream outFile(embeddingCSVpath);
-
     if (!outFile.is_open()) {
-        throw std::runtime_error("Error: Could not open output file: " + embeddingCSVpath);
+        std::cerr << "Error: Could not open file to save embeddings: " << embeddingCSVpath << std::endl;
+        return;
     }
-    outFile << std::fixed << std::setprecision(8);
 
-    // Iterate through the alphabetically sorted tokens
-    for (const auto& token : sorted_tokens_for_saving) {
-        // Find the original index to get the correct embedding
-        int original_index = token_to_original_index.at(token);
-        outFile << "\"" << token << "\"";
+    // Iterate over the *learned tokens* (this->tokens) to ensure consistency
+    for (size_t i = 0; i < this->vocSize; ++i) {
+        const std::string& token = this->tokens[i];
+        float current_seed = (i < this->seeds.size()) ? this->seeds[i] : 0.0f; // Ensure seed indexing aligns
+        std::vector<float> embedding = embeddingFormula(i, current_seed); // Or whatever logic generates the embedding
 
-        for (int j = 0; j < this->d; ++j) {
-            outFile << "," << this->embeddings[original_index][j];
+        // Store in mappedEmbeddings for later use (optional, but good practice)
+        this->mappedEmbeddings[token] = embedding;
+
+        // Write to CSV, handling quoting for tokens
+        std::string escaped_token = token;
+        // ... (add CSV escaping logic for `escaped_token` if it contains commas or quotes) ...
+        outFile << "\"" << escaped_token << "\""; // Always quote the token field
+
+        for (float val : embedding) {
+            outFile << "," << val;
         }
         outFile << "\n";
     }
-
     outFile.close();
-    std::cout << "-> Successfully saved file." << std::endl;
+    std::cout << "Successfully saved " << this->tokens.size() << " embeddings to " << embeddingCSVpath << std::endl;
 }

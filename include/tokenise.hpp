@@ -228,4 +228,4 @@ __global__ void embeddingFormulaBatchKernel(float* all_embeddings, const float* 
 __global__ void batchedVectorInverseKernel(float* output, const float* input, int N, int d);
 #endif
 
-#endif
+#endif // TOKENISE_HPP

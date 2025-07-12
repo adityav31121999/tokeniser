@@ -4,9 +4,9 @@
 
 
 // Helper to merge two unordered_maps. This is efficient as it moves map2's contents.
-std::unordered_map<std::string, int> mergeTwoMaps(
-    std::unordered_map<std::string, int> map1,
-    std::unordered_map<std::string, int> map2) {
+std::unordered_map<std::string, int> mergeTwoMaps(std::unordered_map<std::string, int> map1,
+    std::unordered_map<std::string, int> map2) 
+{
     // Prefer inserting smaller map into larger one for efficiency
     if (map1.size() < map2.size()) {
         std::swap(map1, map2);

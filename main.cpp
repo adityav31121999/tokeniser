@@ -6,12 +6,26 @@
 #include <filesystem>
 #include "include/tokenise.hpp"
 
+long long count_lines(const std::string& filename) {
+    std::ifstream file(filename);
+    if (!file.is_open()) {
+        std::cerr << "Warning: Could not open file to count lines: " << filename << std::endl;
+        return -1;
+    }
+    long long count = 0;
+    std::string line;
+    while (std::getline(file, line)) {
+        count++;
+    }
+    return count;
+}
+
 int main()
 {
-    std::cout << "-------------------------------------------------------------" << std::endl;
-    std::cout << "--------------------- Tokeniser 0.0.0.1 ---------------------" << std::endl;
-    std::cout << "---------- Tokenisation based on BytePair Encoding ----------" << std::endl;
-    std::cout << "-------------------------------------------------------------" << std::endl;
+    std::cout << "-----------------------------------------------------------------------" << std::endl;
+    std::cout << "-------------------------- Tokeniser 0.0.0.1 --------------------------" << std::endl;
+    std::cout << "--------------- Tokenisation based on BytePair Encoding ---------------" << std::endl;
+    std::cout << "-----------------------------------------------------------------------" << std::endl;
 
     #ifdef USE_CUDA
         std::cout << "Using CUDA" << std::endl;
@@ -25,7 +39,7 @@ int main()
     try {
         const int embeddingDimension = 64;      // embedding dimension
         const int d_val = 4;                    // Your original divisor for the formula
-        const int num_merges = 24576;           // = 2^n and its multiples (24576 = 8192 * 3)
+        const int num_merges = 16384;           // = 2^n and its multiples (24576 = 8192 * 3)
         const std::string path2folder = "D:/train/txt";
         // paths to all csv files
         const std::string unique_tokens_output_path = "D:/train/_unique_initial_tokens.csv";
@@ -42,11 +56,8 @@ int main()
 
         TOKENISER.setNumThreads(); // Automatically set to use max threads
         std::cout << "-> Number of threads for CPU: " << TOKENISER.num_threads << std::endl;
-        #ifdef USE_OPENCL
-            TOKENISER.ocl = ocl;
-        #endif
 
-        std::cout << "------------------- 1. AGGREGATING DATA ---------------------" << std::endl;
+        std::cout << "------------------------ 1. AGGREGATING DATA --------------------------" << std::endl;
 
         // Step A: Collect all file paths
         std::vector<std::string> all_file_paths;
@@ -67,20 +78,25 @@ int main()
 
         // Step C: Save the gathered unique raw tokens to a CSV file.
         TOKENISER.saveUniqueTokensToCSV(corpus_word_counts, unique_tokens_output_path);
+        std::cout << "-> " << std::filesystem::path(unique_tokens_output_path).filename().string() << " contains " << count_lines(unique_tokens_output_path) << " rows." << std::endl;
 
-        std::cout << "---------------------- 2. VOCABULARY LEARNING ----------------------" << std::endl;
+        std::cout << "--------------------------- 2. VOCABULARY LEARNING ---------------------------" << std::endl;
         std::vector<std::string> final_vocabulary;
         // Call the new two-stage learning function.
         TOKENISER.learn_vocabulary_from_word_counts(corpus_word_counts, num_merges, final_vocabulary);
         std::cout << "-> Vocabulary Learning complete. Final vocabulary size: " << TOKENISER.getVocabularySize() << std::endl;
 
-        std::cout << "----------------- 3. STATS & EMBEDDING GEN ------------------" << std::endl;
+        std::cout << "---------------------- 3. STATS & EMBEDDING GEN -----------------------" << std::endl;
         // Step A: Calculate statistics based on the final BPE vocabulary
         TOKENISER.calculateTokenStatsFromCounts(corpus_word_counts, stats_output_path);
+        std::cout << "-> " << std::filesystem::path(stats_output_path).filename().string() << " contains " << count_lines(stats_output_path) << " rows." << std::endl;
         // Step B: Generate embeddings using original formula
         TOKENISER.generateAndSaveEmbeddings(embeddings_output_path, seed_output_path, -10.0f, 10.0f);
-
-        std::cout << "--------------------- 4. INFERENCE DEMO ---------------------" << std::endl;
+        std::cout << "-> " << std::filesystem::path(stats_output_path).filename().string() << " contains " << count_lines(stats_output_path) << " rows." << std::endl;
+        std::cout << "-> " << std::filesystem::path(embeddings_output_path).filename().string() << " contains " << count_lines(embeddings_output_path) << " rows." << std::endl;
+        std::cout << "-> " << std::filesystem::path(seed_output_path).filename().string() << " contains " << count_lines(seed_output_path) << " rows." << std::endl;
+        
+        std::cout << "-------------------------- 4. INFERENCE DEMO --------------------------" << std::endl;
         std::string test_sentence = "This is a test sentence for christianity and its international relationships to see the new tokenizer in action. Hence, need more words to see whether it will work or not, if not rework the code logic and try again. This tokeniser is (BPE) is supercalifragilisticexpialidocious at the ludicrous speed. Ludicrous speed can be given by higher multiple of light speed which is 2.9 * 10^8 m/s.";
         std::vector<std::string> tokenized_sentence;
         TOKENISER.splitSentence(test_sentence, tokenized_sentence);
@@ -94,13 +110,12 @@ int main()
     }
     catch (const std::exception& e) {
         std::cerr << "\nFATAL ERROR: " << e.what() << std::endl;
-        std::cout << "------------------------ PROCESS FAILED ------------------------" << std::endl;
+        std::cout << "-------------------------- PROCESS FAILED '-' -------------------------" << std::endl;
         return 1;
     }
 
-
-    std::cout << "-------------------------------------------------------------" << std::endl;
-    std::cout << "----------------------- PROCESS COMPLETE --------------------" << std::endl;
-    std::cout << "-------------------------------------------------------------" << std::endl;
+    std::cout << "-----------------------------------------------------------------------" << std::endl;
+    std::cout << "---------------------------- PROCESS COMPLETE -------------------------" << std::endl;
+    std::cout << "-----------------------------------------------------------------------" << std::endl;
     return 0;
 }

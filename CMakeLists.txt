@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 3.30.0 FATAL_ERROR)
 
 # Backend selection options. Use -D<OPTION>=ON/OFF to change.
 set(USE_CUDA OFF)
-set(USE_OPENCL ON)
+set(USE_OPENCL OFF)
 
 if(USE_CUDA AND USE_OPENCL)
     message(FATAL_ERROR "USE_CUDA and USE_OPENCL options are mutually exclusive. Please enable only one.")

@@ -289,11 +289,6 @@ std::vector<std::vector<std::string>> readCsvTo2DVector(const std::string& filen
             if (ss.eof() && ss.peek() == EOF) {
                 break; // No more characters and stream is at end
             }
-            // If the last read field was empty and `readCsvField` didn't consume a comma,
-            // it means it was an empty field at the end of the line.
-            // Or if `readCsvField` correctly consumed a comma, and there's more to read.
-            // This `while(true)` combined with `readCsvField` consuming the comma should work.
-            // Just need to ensure `readCsvField` handles EOF correctly.
         }
         if (!row.empty()) {
             csvData.push_back(row);
@@ -358,7 +353,6 @@ std::unordered_map<std::string, int> readUnorderedMap(const std::string& filenam
         std::string raw_count_field = readCsvField(ss);
         std::string count_str_cleaned = removeQuotes(trim(raw_count_field));
 
-        // --- START CRITICAL FIX: Robust cleaning for the count string ---
         std::string final_numeric_count_str;
         bool first_char_of_count = true;
         for (char c : count_str_cleaned) {
@@ -374,8 +368,6 @@ std::unordered_map<std::string, int> readUnorderedMap(const std::string& filenam
              std::cerr << "Warning: Count string became empty after cleaning non-numeric characters in line " << lineNumber << ". Original raw: '" << raw_count_field << "'. Cleaned: '" << count_str_cleaned << "'" << std::endl;
              continue;
         }
-        // --- END CRITICAL FIX ---
-
 
         if (token.empty()) {
             // This case should ideally result in a valid empty string token `""`.
@@ -446,12 +438,7 @@ std::unordered_map<std::string, std::vector<float>> readMappedEmbeddings(const s
             continue;
         }
 
-        // NO HEADER SKIPPING LOGIC HERE FOR _final_embeddings.csv
-        // Based on user's confirmation that this file has no header.
-        
         std::stringstream ss(line);
-        
-        // Read the token field using the robust helper
         std::string raw_token_field = readCsvField(ss);
         std::string word_str = removeQuotes(trim(raw_token_field));
 
@@ -571,7 +558,6 @@ void tokeniser::readFromFiles(const std::string& path2ClassDataFolder) {
     // if (std::find(this->tokens.begin(), this->tokens.end(), "</w>") == this->tokens.end()) {
     //     this->tokens.push_back("</w>");
     // }
-
 
     // 3. IMPORTANT: Sort the tokens by length in descending order.
     // This is crucial for the greedy longest-match logic in splitWord.

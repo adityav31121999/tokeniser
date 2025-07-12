@@ -1,5 +1,3 @@
-#ifdef USE_OPENCL
-
 #include "include/tokenise.hpp"
 #include <string>
 #include <sstream>
@@ -8,6 +6,9 @@
 #include <fstream>
 #include <iostream>
 #include <filesystem>
+
+#ifdef USE_OPENCL
+
 
 /**
  * @brief constructor for tokeniser (use dimensions directly)
