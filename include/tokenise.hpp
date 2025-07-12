@@ -83,9 +83,6 @@ public:
     explicit tokeniser(const std::string& path2data) noexcept;
 #endif
 
-    tokeniser(const tokeniser& toBeCopied) noexcept;        // copy constructor
-    tokeniser(tokeniser&& toBeMoved) noexcept;              // move constructor
-
     /**
      * a generic lambda that implements the mathematical formula:
      * --> f(i, j, seed) = (j + 1) * C * (seed^[j%d + 1]) / (j%d + 1)
@@ -148,6 +145,7 @@ public:
 
     ~tokeniser() = default;
 };
+
 
 /**
  * @brief A thread-safe queue designed for producer-consumer patterns.

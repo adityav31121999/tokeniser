@@ -1,3 +1,5 @@
+#ifdef USE_OPENCL
+
 #include "include/tokenise.hpp"
 #include <string>
 #include <sstream>
@@ -6,8 +8,6 @@
 #include <fstream>
 #include <iostream>
 #include <filesystem>
-
-#ifdef USE_OPENCL
 
 /**
  * @brief constructor for tokeniser (use dimensions directly)
@@ -278,45 +278,6 @@ tokeniser::tokeniser(const std::string& path2data) noexcept : path2data(path2dat
 }
 
 #endif
-
-
-/**
- * @brief copy constructor
- * @param toBeCopied constructor to be copied
- */
-tokeniser::tokeniser(const tokeniser& toBeCopied) noexcept // Corrected parameter name and added const
-    : d(toBeCopied.d),
-      vocSize(toBeCopied.vocSize),
-      path2data(toBeCopied.path2data),
-      tokens(toBeCopied.tokens),
-      embeddings(toBeCopied.embeddings),
-      seeds(toBeCopied.seeds),
-      deEmbeddings(toBeCopied.deEmbeddings),
-      mappedEmbeddings(toBeCopied.mappedEmbeddings)
-{
-    #ifdef USE_OPENCL
-        ocl = toBeCopied.ocl;
-    #endif
-}
-
-/**
- * @brief move constructor
- * @param toBeMoved constructor to be moved
- */
-tokeniser::tokeniser(tokeniser&& toBeMoved) noexcept
-    : d(toBeMoved.d),
-      vocSize(toBeMoved.vocSize),
-      path2data(std::move(toBeMoved.path2data)),
-      tokens(std::move(toBeMoved.tokens)),
-      embeddings(std::move(toBeMoved.embeddings)),
-      seeds(std::move(toBeMoved.seeds)),
-      deEmbeddings(std::move(toBeMoved.deEmbeddings)),
-      mappedEmbeddings(std::move(toBeMoved.mappedEmbeddings))
-{
-    #ifdef USE_OPENCL
-        ocl = toBeMoved.ocl;
-    #endif
-}
 
 
 // Helper function to allow splitting file_paths among producers
