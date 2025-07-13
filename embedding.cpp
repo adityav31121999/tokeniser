@@ -90,7 +90,7 @@ void tokeniser::seedsForEmbedding(float r1, float r2, const std::string& seedCSV
 
     // Iterate through tokens
     int i = 0;
-    outFile << "token,seed\n";
+    // outFile << "token,seed\n";
     for (int i = 0; i < this->vocSize; i++) {
         outFile << tokens[i] <<  "," << this->seeds[i] << "\n";
     }

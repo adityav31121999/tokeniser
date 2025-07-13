@@ -152,6 +152,7 @@ std::vector<std::string> readSingleColumnCsv(const std::string& filename) {
     return columnData;
 }
 
+
 // Function to read a specific column (0-based index) from a multi-column CSV
 // This function needs to be adapted to use the new readCsvField helper for each segment
 std::vector<std::string> readSpecificColumnFromCsv(const std::string& filename, int targetColumnIndex) {
@@ -192,11 +193,11 @@ std::vector<std::string> readSpecificColumnFromCsv(const std::string& filename, 
         // NOTE: This function's use of isHeaderLine depends on the expected file format.
         // If files processed by this function genuinely have headers, keep this.
         // Otherwise, it might incorrectly skip the first data line.
-        if (!headerSkipped && isHeaderLine(line)) {
+        /*if (!headerSkipped && isHeaderLine(line)) {
             headerSkipped = true;
             std::cout << "Skipping header line: " << line << std::endl;
             continue;
-        }
+        }*/
 
         std::stringstream ss(line);
         std::string segment_raw;
@@ -337,11 +338,11 @@ std::unordered_map<std::string, int> readUnorderedMap(const std::string& filenam
         }
 
         // Skip header line
-        if (!headerSkipped && isHeaderLine(line)) {
+        /*if (!headerSkipped && isHeaderLine(line)) {
             headerSkipped = true;
             std::cout << "Skipping header line: " << line << std::endl;
             continue;
-        }
+        }*/
 
         std::stringstream ss(line);
         
@@ -407,6 +408,7 @@ std::unordered_map<std::string, int> readUnorderedMap(const std::string& filenam
 
     return corpusWordCount;
 }
+
 
 // Function to read a CSV with "word,float1,float2,..." format into an unordered_map<string, vector<float>>
 std::unordered_map<std::string, std::vector<float>> readMappedEmbeddings(const std::string& filename) {

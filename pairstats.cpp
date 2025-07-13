@@ -137,7 +137,8 @@ void tokeniser::calculateTokenStatsFromCounts(const std::unordered_map<std::stri
             std::cerr << "Warning: Could not open file to save token stats: " << outputPath << std::endl;
             return;
         }
-        outFile << "token,repetitions\n";
+        
+        // outFile << "token,repetitions\n";
         for (const auto& pair : sorted_stats) {
             const std::string& token = pair.first;
             // Handle tokens that might contain commas or quotes (CSV escaping)
@@ -195,7 +196,7 @@ void tokeniser::saveUniqueTokensToCSV(const std::unordered_map<std::string, int>
     }
 
     // Write the CSV header
-    outFile << "token\n";
+    // outFile << "token\n";
 
     // Iterate through the map and write each key (the token) to the file
     for (const auto& pair : corpus_word_counts) {
