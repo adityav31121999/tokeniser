@@ -10,35 +10,6 @@
 
 
 /**
- * @brief general formula for embedding
- * @param i token number
- * @param j specific position of embedding vector
- * @param seed seed for whole embedding
- */
-float tokeniser::embeddingFormula(int i, int j, float seed) {
-    return tokeniser::embeddingFormulaLambda(i, j, d_val, seed);
-}
-
-
-/**
- * @brief generates an embedding vector for a given token number
- * @param i token number
- * @param seed seed for whole embedding
- */
-std::vector<float> tokeniser::embeddingFormula(int i, float seed)
-{
-    // Initialize a vector of size 'd' to hold the embedding.
-    std::vector<float> embed(d, 0.0f);
-    int j = 0;
-    std::generate(embed.begin(), embed.end(), [&j, i, d_val = d, seed] {
-        // Call the static lambda from the header.
-        return tokeniser::embeddingFormulaLambda(i, j++, d_val, seed);
-    });
-    return embed;
-}
-
-
-/**
  * @brief multiplicative inverse of a vector
  * @param vec vector input
  * @return inverse of vector
@@ -56,49 +27,6 @@ std::vector<float> vectorInverse(const std::vector<float> &vec)
     return inverse;
 }
 
-
-/**
- * @brief Generates a random seed for each token in the vocabulary.
- * The seeds are uniformly distributed within the specified range [r1, r2].
- * @param r1 Lower bound for the random seed generation.
- * @param r2 Upper bound for the random seed generation.
- */
-void tokeniser::seedsForEmbedding(float r1, float r2, const std::string& seedCSVpath) {
-    if (this->tokens.empty()) {
-        std::cerr << "Warning: Cannot generate seeds for an empty vocabulary." << std::endl;
-        return;
-    }
-    
-    // Modern C++ way to generate random numbers
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_real_distribution<float> distrib(r1, r2);
-
-    this->seeds.resize(this->vocSize);
-    for (int i = 0; i < this->vocSize; ++i) {
-        this->seeds[i] = distrib(gen);
-    }
-
-    std::cout << "-> Seeds created." << std::endl;
-    std::cout << "-> Saving tokens and embeddings to: " << seedCSVpath << std::endl;
-    std::ofstream outFile(seedCSVpath);
-
-    if (!outFile.is_open()) {
-        throw std::runtime_error("Error: Could not open output file: " + seedCSVpath);
-    }
-    outFile << std::fixed << std::setprecision(8);
-
-    // Iterate through tokens
-    int i = 0;
-    // outFile << "token,seed\n";
-    for (int i = 0; i < this->vocSize; i++) {
-        outFile << tokens[i] <<  "," << this->seeds[i] << "\n";
-    }
-    outFile.close();
-    std::cout << "-> Successfully saved file." << std::endl;
-}
-
-
 /**
  * @brief Generates random seeds and computes embeddings for the current vocabulary.
  * This function populates the internal embedding vectors based on the tokens
@@ -110,7 +38,7 @@ void tokeniser::seedsForEmbedding(float r1, float r2, const std::string& seedCSV
  * @param r2 The upper bound for the random seed generation.
  * @throws std::runtime_error if the output file cannot be opened.
  */
-void tokeniser::generateAndSaveEmbeddings(const std::string& embeddingCSVpath, const std::string& seedCSVpath, float r1, float r2) {
+void tokeniser::generateAndSaveEmbeddings(const std::string& embeddingCSVpath, float r1, float r2) {
     if (this->tokens.empty()) {
         throw std::runtime_error("Error: Vocabulary is not trained. Cannot generate embeddings.");
     }
@@ -125,29 +53,34 @@ void tokeniser::generateAndSaveEmbeddings(const std::string& embeddingCSVpath, c
         token_to_original_index[this->tokens[i]] = i;
     }
 
-    // Generate seeds for the vocabulary
-    std::cout << "-> Generating random seeds for " << this->vocSize << " tokens..." << std::endl;
-    this->seedsForEmbedding(r1, r2, seedCSVpath);
-    std::cout << "-> Calculating " << this->d << "-dimensional embeddings..." << std::endl;
-    
-    // Resize vectors to hold the data
     this->embeddings.resize(this->vocSize, std::vector<float>(this->d));
-    this->deEmbeddings.resize(this->vocSize, std::vector<float>(this->d));
+    // this->deEmbeddings.resize(this->vocSize, std::vector<float>(this->d));
     
     #ifdef USE_CUDA
         // Call the CUDA kernel wrapper
-        cuEmbeddingFormula(this->embeddings, this->seeds, this->d, this->vocSize);
+        cuEmbeddingFormula(this->embeddings, this->seeds, this->d, this->vocSize, r1, r2);
         // cuVectorInverse(this->deEmbeddings, this->embeddings, this->d, this->vocSize);
     #elif USE_OPENCL
         // Call the OpenCL kernel wrapper
-        clEmbeddingFormula(this->ocl, this->embeddings, this->seeds, this->d, this->vocSize);
+        clEmbeddingFormula(this->ocl, this->embeddings, this->seeds, this->d, this->vocSize, r1, r2);
         // clVectorInverse(this->ocl, this->deEmbeddings, this->embeddings, this->d, this->vocSize);
     #else
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_real_distribution<float> dis(r1, r2);
+
+        // Ensure the embeddings vector is correctly sized before populating
+        // This is a crucial step if embeddings is not pre-sized in a constructor.
+        this->embeddings.resize(this->vocSize);
+        for (int i = 0; i < this->vocSize; ++i) {
+            this->embeddings[i].resize(this->d);
+        }
+
         // Fallback to CPU implementation
         for (int i = 0; i < this->vocSize; ++i) {
             // Note: `i` here corresponds to the index in the original `this->tokens` list
             for (int j = 0; j < this->d; ++j) {
-                this->embeddings[i][j] = embeddingFormulaLambda(i, j, this->d_val, this->seeds[i]);
+                this->embeddings[i][j] = dis(gen); // <--- CORRECTED: Call dis with the generator 'gen'
             }
         }
     #endif
@@ -163,8 +96,7 @@ void tokeniser::generateAndSaveEmbeddings(const std::string& embeddingCSVpath, c
     // Iterate over the *learned tokens* (this->tokens) to ensure consistency
     for (size_t i = 0; i < this->vocSize; ++i) {
         const std::string& token = this->tokens[i];
-        float current_seed = (i < this->seeds.size()) ? this->seeds[i] : 0.0f; // Ensure seed indexing aligns
-        std::vector<float> embedding = embeddingFormula(i, current_seed); // Or whatever logic generates the embedding
+        std::vector<float> embedding = embeddings[i];
 
         // Store in mappedEmbeddings for later use (optional, but good practice)
         this->mappedEmbeddings[token] = embedding;

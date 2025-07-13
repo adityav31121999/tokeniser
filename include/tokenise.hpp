@@ -1,4 +1,3 @@
-// header file
 #ifndef TOKENISE_HPP
 #define TOKENISE_HPP 1
 
@@ -12,10 +11,12 @@
 #include <queue>                 // For std::queue
 #include <mutex>                 // For std::mutex, std::lock_guard
 #include <condition_variable>    // For std::condition_variable
-#include <unordered_map>         // For the much faster hash map
 #include <regex>
 #include <algorithm>
 #include <future>
+#include <thread>
+#include <memory> // <--- NEW: For std::unique_ptr
+#include <utility> // For std::move
 
 // for fast multithreading operations
 struct PairHash {
@@ -30,9 +31,10 @@ struct PairHash {
 /**
  * @brief A struct to hold shared progress data for logging.
  * Protected by a mutex.
+ * Explicitly delete copy/move operations because of std::mutex.
  */
 struct ProgressData {
-    std::mutex mtx;
+    std::mutex mtx; // This makes ProgressData non-copyable and non-movable
     std::condition_variable cv;
     long long total_bytes = 0;
     long long bytes_read = 0;
@@ -41,11 +43,22 @@ struct ProgressData {
     int merges_completed = 0;
     int total_merges = 0;
     std::chrono::steady_clock::time_point start_time;
+
+    // Explicitly delete copy constructor and assignment operator
+    ProgressData(const ProgressData&) = delete;
+    ProgressData& operator=(const ProgressData&) = delete;
+
+    // Explicitly delete move constructor and assignment operator (due to mutex)
+    ProgressData(ProgressData&&) = delete;
+    ProgressData& operator=(ProgressData&&) = delete;
+
+    // Default constructor is fine for creating a new instance
+    ProgressData() = default;
 };
 
 
 /**
- * Class to tokenise dataset into subwords and embeddings. The embeddings are of 
+ * Class to tokenise dataset into subwords and embeddings. The embeddings are of
  * d dimension with all the values of type float.
  */
 class tokeniser {
@@ -68,36 +81,131 @@ public:
 
     int num_threads;                        // number of threads
     int totalCorpusWordCount;               // corpus word count
-    ProgressData bpe_progress;              // track progress throughout for tokenisation
+    // CHANGE HERE: Use std::unique_ptr for bpe_progress
+    std::unique_ptr<ProgressData> bpe_progress;
+
+#ifdef USE_OPENCL
+    OpenCLContext ocl;
+#endif
 
 // constructors
     // default constructors
 #ifdef USE_OPENCL
-    tokeniser(int d, OpenCLContext& context);
-    tokeniser(int d, int d_val, OpenCLContext& context);
-    explicit tokeniser(const std::string& path2data, OpenCLContext& context) noexcept;
+    tokeniser(int d, OpenCLContext& context); // You'd need to initialize bpe_progress here too
+    tokeniser(int d, int d_val, OpenCLContext& context); // And here
+    explicit tokeniser(const std::string& path2data, OpenCLContext& context) noexcept; // And here
 #elif USE_CUDA || USE_CPU
-    tokeniser() = default;
+    // Initialize bpe_progress in all constructors
+    tokeniser() : bpe_progress(std::make_unique<ProgressData>()) {}
     tokeniser(int d);
     tokeniser(int d, int d_val);
     explicit tokeniser(const std::string& path2data) noexcept;
 #endif
 
-    /**
-     * a generic lambda that implements the mathematical formula:
-     * --> f(i, j, seed) = (j + 1) * C * (seed^[j%d + 1]) / (j%d + 1)
-     * where: C = 0.01, x = seed, and  d is the embedding dimension.
-     */
-    static constexpr auto embeddingFormulaLambda = [](int i, int j, int d_val, auto seed_val)
-    {
-        // (i * j + 1) * C
-        // C = 0.01
-        int exponent = (j % d_val) + 1;
-        float intermediate_val = static_cast<float>(j + 1) * 0.01f / exponent;
-        // (seed^[j%d])
-        intermediate_val *= std::pow(seed_val, exponent);
-        return intermediate_val;
-    };
+    // Copy Constructor
+    tokeniser(const tokeniser& other)
+        : d(other.d),
+          vocSize(other.vocSize),
+          d_val(other.d_val),
+          path2data(other.path2data),
+          tokens(other.tokens),
+          seeds(other.seeds),
+          embeddings(other.embeddings),
+          deEmbeddings(other.deEmbeddings),
+          mappedEmbeddings(other.mappedEmbeddings),
+          corpusWordCount(other.corpusWordCount),
+          statOfTokens(other.statOfTokens),
+          num_threads(other.num_threads),
+          totalCorpusWordCount(other.totalCorpusWordCount),
+          bpe_progress(std::make_unique<ProgressData>()) // Create a NEW, independent ProgressData object
+#ifdef USE_OPENCL
+          , ocl(other.ocl)
+#endif
+    {}
+
+    // Move Constructor
+    tokeniser(tokeniser&& other) noexcept
+        : d(other.d),
+          vocSize(other.vocSize),
+          d_val(other.d_val),
+          path2data(std::move(other.path2data)),
+          tokens(std::move(other.tokens)),
+          seeds(std::move(other.seeds)),
+          embeddings(std::move(other.embeddings)),
+          deEmbeddings(std::move(other.deEmbeddings)),
+          mappedEmbeddings(std::move(other.mappedEmbeddings)),
+          corpusWordCount(std::move(other.corpusWordCount)),
+          statOfTokens(std::move(other.statOfTokens)),
+          num_threads(other.num_threads),
+          totalCorpusWordCount(other.totalCorpusWordCount),
+          bpe_progress(std::move(other.bpe_progress)) // std::unique_ptr handles the move
+#ifdef USE_OPENCL
+          , ocl(std::move(other.ocl))
+#endif
+    {}
+
+    // Copy Assignment Operator
+    tokeniser& operator=(const tokeniser& other) {
+        if (this == &other) { // Handle self-assignment
+            return *this;
+        }
+
+        d = other.d;
+        vocSize = other.vocSize;
+        d_val = other.d_val;
+        path2data = other.path2data;
+        tokens = other.tokens;
+        seeds = other.seeds;
+        embeddings = other.embeddings;
+        deEmbeddings = other.deEmbeddings;
+        mappedEmbeddings = other.mappedEmbeddings;
+        corpusWordCount = other.corpusWordCount;
+        statOfTokens = other.statOfTokens;
+        num_threads = other.num_threads;
+        totalCorpusWordCount = other.totalCorpusWordCount;
+        bpe_progress = std::make_unique<ProgressData>(); // Create a new ProgressData object
+
+        #ifdef USE_OPENCL
+            ocl = other.ocl;
+        #endif
+        return *this;
+    }
+
+    // Move Assignment Operator
+    tokeniser& operator=(tokeniser&& other) noexcept {
+        if (this == &other) { // Handle self-assignment
+            return *this;
+        }
+
+        d = other.d;
+        vocSize = other.vocSize;
+        d_val = other.d_val;
+        path2data = std::move(other.path2data);
+        tokens = std::move(other.tokens);
+        seeds = std::move(other.seeds);
+        embeddings = std::move(other.embeddings);
+        deEmbeddings = std::move(other.deEmbeddings);
+        mappedEmbeddings = std::move(other.mappedEmbeddings);
+        corpusWordCount = std::move(other.corpusWordCount);
+        statOfTokens = std::move(other.statOfTokens);
+        num_threads = other.num_threads;
+        totalCorpusWordCount = other.totalCorpusWordCount;
+
+        // Move the unique_ptr
+        bpe_progress = std::move(other.bpe_progress);
+
+        #ifdef USE_OPENCL
+            ocl = std::move(other.ocl);
+        #endif
+
+        other.d = 0;
+        other.vocSize = 0;
+        other.d_val = 0;
+        other.num_threads = 0;
+        other.totalCorpusWordCount = 0;
+        return *this;
+    }
+
 
     // programs for setting values
     void setEmbeddingDimension(int d);
@@ -128,20 +236,18 @@ public:
     void saveUniqueTokensToCSV(const std::unordered_map<std::string, int>& corpus_word_counts, const std::string& outputPath);
     void calculateTokenStatsFromCounts(const std::unordered_map<std::string, int>& corpus_word_counts, const std::string& outputPath);
     void calculateTokenStats(const std::vector<std::string>& pre_tokens, const std::string& outputPath);
-
-    void seedsForEmbedding(float r1, float r2,const std::string& seedCSVpath);
-    float embeddingFormula(int i, int j, float seed);
-    std::vector<float> embeddingFormula(int i, float seed);
-    void generateAndSaveEmbeddings(const std::string& outputPath, const std::string& seedCSVpath, float r1, float r2);
+    void generateAndSaveEmbeddings(const std::string& outputPath, float r1, float r2);
 
     #ifdef USE_CUDA
         void cuEmbeddingFormula(std::vector<std::vector<float>>& embedding, const std::vector<float>& seeds, int& d, int& vocSize);
         void cuVectorInverse(std::vector<std::vector<float>>& deEmbedding, const std::vector<std::vector<float>>& embedding, int& d, int& vocSize);
     #elif USE_OPENCL
-        OpenCLContext ocl;
-        void clEmbeddingFormula(OpenCLContext& ocl, std::vector<std::vector<float>>& embedding, const std::vector<float>& seeds, int& d, int& vocSize);
+        void clEmbeddingFormula(OpenCLContext& ocl_context, std::vector<std::vector<float>>& embedding, const std::vector<float>& seeds_ignored, int& d_dim, int& vocSize_val, float r1, float r2);
         void clVectorInverse(OpenCLContext& ocl, std::vector<std::vector<float>>& deEmbedding, const std::vector<std::vector<float>>& embedding, int& d, int& vocSize);
     #endif
+
+    // training function
+    void train(const std::string& path2trainData, int numOfmerges, const std::string& path2tokenData);
 
     ~tokeniser() = default;
 };
@@ -160,6 +266,14 @@ private:
     bool done_ = false;
 
 public:
+    // Explicitly delete copy/move for ThreadSafeQueue due to std::mutex and std::condition_variable
+    ThreadSafeQueue(const ThreadSafeQueue&) = delete;
+    ThreadSafeQueue& operator=(const ThreadSafeQueue&) = delete;
+    ThreadSafeQueue(ThreadSafeQueue&&) = delete;
+    ThreadSafeQueue& operator=(ThreadSafeQueue&&) = delete;
+
+    ThreadSafeQueue() = default; // Default constructor is fine
+
     /**
      * @brief Pushes a new item onto the queue and notifies a waiting consumer.
      */
@@ -183,7 +297,7 @@ public:
         }
 
         item = std::move(queue_.front());
-        queue_.pop();
+            queue_.pop();
         return true;
     }
 
@@ -206,8 +320,10 @@ std::future<std::unordered_map<std::string, int>> merge_maps(std::vector<std::fu
 std::vector<float> vectorInverse(const std::vector<float>& vec);
 std::vector<std::string> pre_tokenize_word_by_corpus_freq(const std::string& word, const std::unordered_map<std::string, int>& corpus_word_counts);
 
+long long count_lines(const std::string& filename);
 std::string trim(const std::string& str);
 std::string removeQuotes(const std::string& str);
+std::string escapeAndQuoteCsvField(const std::string& field);
 bool isHeaderLine(const std::string& line);
 std::vector<std::string> readSingleColumnCsv(const std::string& filename);
 std::vector<std::string> readSpecificColumnFromCsv(const std::string& filename, int targetColumnIndex);
@@ -222,7 +338,7 @@ std::unordered_map<std::string, std::vector<float>> readMappedEmbeddings(const s
 #include <device_launch_parameters.h>
 
 // kernel for embedding calculation
-__global__ void embeddingFormulaBatchKernel(float* all_embeddings, const float* all_seeds, 
+__global__ void embeddingFormulaBatchKernel(float* all_embeddings, const float* all_seeds,
             const int N, const int d);
 // kernel for vector inverse calculation
 __global__ void batchedVectorInverseKernel(float* output, const float* input, int N, int d);

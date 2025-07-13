@@ -6,20 +6,6 @@
 #include <filesystem>
 #include "include/tokenise.hpp"
 
-long long count_lines(const std::string& filename) {
-    std::ifstream file(filename);
-    if (!file.is_open()) {
-        std::cerr << "Warning: Could not open file to count lines: " << filename << std::endl;
-        return -1;
-    }
-    long long count = 0;
-    std::string line;
-    while (std::getline(file, line)) {
-        count++;
-    }
-    return count;
-}
-
 int main()
 {
     std::cout << "-----------------------------------------------------------------------" << std::endl;
@@ -36,16 +22,18 @@ int main()
         std::cout << "Using CPU core Functions" << std::endl;
     #endif
 
+    const std::string path2trainData;
+    const std::string path2tokenData;
+
     try {
         const int embeddingDimension = 64;      // embedding dimension
         const int d_val = 4;                    // Your original divisor for the formula
-        const int num_merges = 16384;           // = 2^n and its multiples (24576 = 8192 * 3)
+        const int num_merges = 32768;           // = 2^n and its multiples (24576 = 8192 * 3)
         const std::string path2folder = "D:/train/txt";
         // paths to all csv files
         const std::string unique_tokens_output_path = "D:/train/_unique_initial_tokens.csv";
         const std::string stats_output_path = "D:/train/_final_token_stats.csv";
         const std::string embeddings_output_path = "D:/train/_final_embeddings.csv";
-        const std::string seed_output_path = "D:/train/_seedsForEmbeddings.csv";
 
         // Create and configure the tokenizer instance
     #ifdef USE_OPENCL
@@ -58,7 +46,6 @@ int main()
         std::cout << "-> Number of threads for CPU: " << TOKENISER.num_threads << std::endl;
 
         std::cout << "------------------------ 1. AGGREGATING DATA --------------------------" << std::endl;
-
         // Step A: Collect all file paths
         std::vector<std::string> all_file_paths;
         for (const auto& entry : std::filesystem::directory_iterator(path2folder)) {
@@ -68,14 +55,12 @@ int main()
         }
         std::cout << "-> Found " << all_file_paths.size() << " files for training in: " << path2folder << std::endl;
         if (all_file_paths.empty()) throw std::runtime_error("No files found in the specified directory.");
-
         // Step B: Build word counts using the robust producer-consumer model
         std::unordered_map<std::string, int> corpus_word_counts;
         TOKENISER.buildCorpusWordCounts(all_file_paths, corpus_word_counts);
         std::cout << "-> Data aggregation complete. Total unique raw tokens: " << corpus_word_counts.size() << std::endl;
         if (corpus_word_counts.empty()) 
             throw std::runtime_error("No data loaded from files. Check file content.");
-
         // Step C: Save the gathered unique raw tokens to a CSV file.
         TOKENISER.saveUniqueTokensToCSV(corpus_word_counts, unique_tokens_output_path);
         std::cout << "-> " << std::filesystem::path(unique_tokens_output_path).filename().string() << " contains " << count_lines(unique_tokens_output_path) << " rows." << std::endl;
@@ -91,10 +76,9 @@ int main()
         TOKENISER.calculateTokenStatsFromCounts(corpus_word_counts, stats_output_path);
         std::cout << "-> " << std::filesystem::path(stats_output_path).filename().string() << " contains " << count_lines(stats_output_path) << " rows." << std::endl;
         // Step B: Generate embeddings using original formula
-        TOKENISER.generateAndSaveEmbeddings(embeddings_output_path, seed_output_path, -10.0f, 10.0f);
+        TOKENISER.generateAndSaveEmbeddings(embeddings_output_path, -10.0f, 10.0f);
         std::cout << "-> " << std::filesystem::path(stats_output_path).filename().string() << " contains " << count_lines(stats_output_path) << " rows." << std::endl;
         std::cout << "-> " << std::filesystem::path(embeddings_output_path).filename().string() << " contains " << count_lines(embeddings_output_path) << " rows." << std::endl;
-        std::cout << "-> " << std::filesystem::path(seed_output_path).filename().string() << " contains " << count_lines(seed_output_path) << " rows." << std::endl;
         
         std::cout << "-------------------------- 4. INFERENCE DEMO --------------------------" << std::endl;
         std::string test_sentence = "This is a test sentence for christianity and its international relationships to see the new tokenizer in action. Hence, need more words to see whether it will work or not, if not rework the code logic and try again. This tokeniser is (BPE) is supercalifragilisticexpialidocious at the ludicrous speed. Ludicrous speed can be given by higher multiple of light speed which is 2.9 * 10^8 m/s.";

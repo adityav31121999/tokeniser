@@ -9,6 +9,21 @@
 #include <cctype>
 #include "include/tokenise.hpp"
 
+// count lines or rows in file
+long long count_lines(const std::string& filename) {
+    std::ifstream file(filename);
+    if (!file.is_open()) {
+        std::cerr << "Warning: Could not open file to count lines: " << filename << std::endl;
+        return -1;
+    }
+    long long count = 0;
+    std::string line;
+    while (std::getline(file, line)) {
+        count++;
+    }
+    return count;
+}
+
 // Utility function to trim whitespace from both ends of a string
 std::string trim(const std::string& str) {
     size_t first = str.find_first_not_of(" \t\r\n");
@@ -18,12 +33,13 @@ std::string trim(const std::string& str) {
 }
 
 // Utility function to remove outer quotes from a string AND unescape internal doubled quotes.
+// This function is generally robust for reading CSV fields that were correctly quoted.
 std::string removeQuotes(const std::string& str) {
     std::string temp_str = str;
     bool was_quoted = false;
 
     // First, check and remove outer quotes
-    if (temp_str.length() >= 2 && temp_str.front() == '"' && temp_str.back() == '"') {
+    if (temp_str.length() >= 2 && ((temp_str.front() == '"' && temp_str.back() == '"') || (temp_str.front() == '\"' && temp_str.back() == '\"'))) {
         temp_str = temp_str.substr(1, temp_str.length() - 2);
         was_quoted = true;
     }
@@ -50,6 +66,46 @@ std::string removeQuotes(const std::string& str) {
         return temp_str;
     }
 }
+
+// Helper function to correctly escape and quote a string for CSV output
+// This should be used for *any* field that might contain commas, newlines, or double quotes.
+std::string escapeAndQuoteCsvField(const std::string& field) {
+    // Check if quoting is necessary
+    // Needs quotes if it contains:
+    // 1. A comma (,)
+    // 2. A double quote (")
+    // 3. A newline character (\n or \r)
+    // 4. An empty string (to distinguish from missing field if not last)
+    // 5. Or if the string is just spaces (to preserve them)
+    bool needs_quoting = false;
+    if (field.empty() ||
+        field.find(',') != std::string::npos ||
+        field.find('"') != std::string::npos ||
+        field.find('\n') != std::string::npos ||
+        field.find('\r') != std::string::npos ||
+        (field.find_first_not_of(" \t") == std::string::npos && !field.empty())) // Check for all whitespace string
+    {
+        needs_quoting = true;
+    }
+
+    std::string escaped_field;
+    escaped_field.reserve(field.length() + 2); // Reserve space for potential quotes and escaped chars
+
+    for (char c : field) {
+        if (c == '"') {
+            escaped_field += "\"\""; // Double existing double quotes
+        } else {
+            escaped_field += c;
+        }
+    }
+
+    if (needs_quoting) {
+        return "\"" + escaped_field + "\""; // Enclose in outer double quotes
+    } else {
+        return escaped_field; // No quoting needed
+    }
+}
+
 
 // Function to check if a line looks like a CSV header
 bool isHeaderLine(const std::string& line) {
@@ -152,9 +208,7 @@ std::vector<std::string> readSingleColumnCsv(const std::string& filename) {
     return columnData;
 }
 
-
 // Function to read a specific column (0-based index) from a multi-column CSV
-// This function needs to be adapted to use the new readCsvField helper for each segment
 std::vector<std::string> readSpecificColumnFromCsv(const std::string& filename, int targetColumnIndex) {
     std::vector<std::string> columnData;
     std::ifstream file(filename);
@@ -189,10 +243,8 @@ std::vector<std::string> readSpecificColumnFromCsv(const std::string& filename, 
             continue;
         }
 
-        // Skip header line
-        // NOTE: This function's use of isHeaderLine depends on the expected file format.
-        // If files processed by this function genuinely have headers, keep this.
-        // Otherwise, it might incorrectly skip the first data line.
+        // Removed header skip logic here, as per previous discussion it was commented out in user's code.
+        // If your files legitimately have headers, uncomment this AND ensure it correctly identifies them.
         /*if (!headerSkipped && isHeaderLine(line)) {
             headerSkipped = true;
             std::cout << "Skipping header line: " << line << std::endl;
@@ -337,7 +389,8 @@ std::unordered_map<std::string, int> readUnorderedMap(const std::string& filenam
             continue;
         }
 
-        // Skip header line
+        // Removed header skip logic here, as per previous discussion it was commented out in user's code.
+        // If your files legitimately have headers, uncomment this AND ensure it correctly identifies them.
         /*if (!headerSkipped && isHeaderLine(line)) {
             headerSkipped = true;
             std::cout << "Skipping header line: " << line << std::endl;
@@ -593,6 +646,7 @@ void tokeniser::readFromFiles(const std::string& path2ClassDataFolder) {
         if (it != this->mappedEmbeddings.end()) {
             this->embeddings.push_back(it->second);
         } else {
+            // This is the warning that's being triggered.
             std::cerr << "Warning: Token '" << token_str << "' present in vocabulary but missing embedding in '_final_embeddings.csv'. Adding zero vector." << std::endl;
             this->embeddings.push_back(std::vector<float>(this->d, 0.0f)); // Provide a zero vector as a fallback
         }

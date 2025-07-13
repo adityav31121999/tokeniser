@@ -9,29 +9,30 @@
 
 #ifdef USE_OPENCL
 
-
 /**
  * @brief constructor for tokeniser (use dimensions directly)
  * @param d dimension for embedding
  */
-tokeniser::tokeniser(int d, OpenCLContext& context) : d(d), ocl(context) {}
+tokeniser::tokeniser(int d, OpenCLContext& context) : d(d), bpe_progress(std::make_unique<ProgressData>()), ocl(context) {}
 
 /**
  * @brief constructor for tokeniser (use dimensions directly)
  * @param d dimension for embedding
  * @param vocSize vocabulary size
  */
-tokeniser::tokeniser(int d, int d_val, OpenCLContext& context) : d(d), d_val(d_val), ocl(context) {}
+tokeniser::tokeniser(int d, int d_val, OpenCLContext& context) : d(d), d_val(d_val), bpe_progress(std::make_unique<ProgressData>()), ocl(context) {}
 
 
 /**
  * @brief constructor for tokeniser (use data set directly) - preserves CSV order
  * @param path2data path to folder with all dataset files
  */
-tokeniser::tokeniser(const std::string& path2data, OpenCLContext& context) noexcept : path2data(path2data), ocl(context)
+tokeniser::tokeniser(const std::string& path2data, OpenCLContext& context) noexcept : path2data(path2data), bpe_progress(std::make_unique<ProgressData>()), ocl(context)
 {
     try {
         // Read the CSV file once and build both data structures
+        readFromFiles(path2data);
+        /*
         std::ifstream file(path2data + "/_final_token_stats.csv");
         if (!file.is_open()) {
             std::cerr << "Error: Could not open file " << path2data + "/_final_token_stats.csv" << std::endl;
@@ -135,7 +136,7 @@ tokeniser::tokeniser(const std::string& path2data, OpenCLContext& context) noexc
         std::cout << "  - Tokens loaded: " << this->tokens.size() << std::endl;
         std::cout << "  - Vocabulary size: " << this->vocSize << std::endl;
         std::cout << "  - Embedding dimension: " << this->d << std::endl;
-        
+        */
     } catch (const std::exception& e) {
         std::cerr << "Error initializing tokenizer: " << e.what() << std::endl;
         this->vocSize = 0;
@@ -150,23 +151,25 @@ tokeniser::tokeniser(const std::string& path2data, OpenCLContext& context) noexc
  * @brief constructor for tokeniser (use dimensions directly)
  * @param d dimension for embedding
  */
-tokeniser::tokeniser(int d) : d(d) {}
+tokeniser::tokeniser(int d) : d(d), bpe_progress(std::make_unique<ProgressData>()) {}
 
 /**
  * @brief constructor for tokeniser (use dimensions directly)
  * @param d dimension for embedding
  * @param vocSize vocabulary size
  */
-tokeniser::tokeniser(int d, int d_val) : d(d), d_val(d_val) {}
+tokeniser::tokeniser(int d, int d_val) : d(d), d_val(d_val), bpe_progress(std::make_unique<ProgressData>()) {}
 
 /**
  * @brief constructor for tokeniser (use data set directly) - preserves CSV order
  * @param path2data path to folder with all dataset files
  */
-tokeniser::tokeniser(const std::string& path2data) noexcept : path2data(path2data)
+tokeniser::tokeniser(const std::string& path2data) noexcept : path2data(path2data), bpe_progress(std::make_unique<ProgressData>())
 {
     try {
         // Read the CSV file once and build both data structures
+        readFromFiles(path2data);
+        /*
         std::ifstream file(path2data + "/_final_token_stats.csv");
         if (!file.is_open()) {
             std::cerr << "Error: Could not open file " << path2data + "/_final_token_stats.csv" << std::endl;
@@ -270,7 +273,7 @@ tokeniser::tokeniser(const std::string& path2data) noexcept : path2data(path2dat
         std::cout << "  - Tokens loaded: " << this->tokens.size() << std::endl;
         std::cout << "  - Vocabulary size: " << this->vocSize << std::endl;
         std::cout << "  - Embedding dimension: " << this->d << std::endl;
-        
+        */
     } catch (const std::exception& e) {
         std::cerr << "Error initializing tokenizer: " << e.what() << std::endl;
         this->vocSize = 0;

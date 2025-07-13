@@ -16,32 +16,45 @@ inline void check_cl(cl_int err, const char* file, int line) {
 }
 #define CHECK_CL(err) check_cl(err, __FILE__, __LINE__)
 
-
-// Note: Using C++11 raw string literals (R"CLC(...)CLC") for clean kernel code.
+// source for token embedding
 const std::string embeddingFormulaSource = R"CLC(
-    /** 
-     * --> f(i, j, seed) = (i * j + 1) * C * (seed^[j%d])
-     * where: C = 0.01, x = seed, and d is the embedding dimension.
-     */
-    __kernel void embeddingFormulaBatchKernel(
-        __global float* all_embeddings, __global const float* all_seeds, 
-        const int N, const int d) 
-    {
-        // Use OpenCL's direct global IDs
-        int j = get_global_id(0);
-        int i = get_global_id(1);
+    // Basic XorShift32 PRNG for OpenCL
+    // seed must be unique per work-item
+    unsigned int xorshift32(unsigned int x) {
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+        return x;
+    }
 
-        if (i < N && j < d) {
-            float seed = all_seeds[i];
-            const float C = 0.01f;
-            float result = (float)(i * j + 1) * C;
-            int exponent = j;
-            // Use OpenCL's pow() function
-            result *= pow(seed, (float)exponent);
-            all_embeddings[i * d + j] = result;
-        }
+    // Function to convert a normalized [0,1] float to a custom range [r1, r2]
+    float scale_random(unsigned int* seed_ptr, float r1, float r2) {
+        // Generate a random unsigned int
+        *seed_ptr = xorshift32(*seed_ptr);
+        // Convert to float in [0, 1] range
+        float normalized_val = (float)(*seed_ptr) / (float)0xFFFFFFFFU;
+        // Scale to [r1, r2]
+        return r1 + normalized_val * (r2 - r1);
+    }
+
+    __kernel void generate_embeddings(
+        __global float* embeddings_out,
+        const int d_dim,
+        const float r1,
+        const float r2,
+        const unsigned int initial_seed_offset) {
+
+        int global_id = get_global_id(0); // 0-indexed global work-item ID
+        // int total_elements = get_global_size(0); // Not directly used in this snippet
+
+        // --- MISSING LINE ADDED HERE ---
+        unsigned int seed = initial_seed_offset + global_id + 1; // Declare and initialize 'seed' for this work-item
+
+        // Generate random float in [r1, r2] using the local 'seed'
+        embeddings_out[global_id] = scale_random(&seed, r1, r2);
     }
 )CLC";
+
 
 const std::string vectorInverseSource = R"CLC(
     __kernel void batchedVectorInverseKernel(
@@ -111,14 +124,14 @@ public:
             throw std::runtime_error("No OpenCL platforms found.");
         }
         cl::Platform default_platform = all_platforms[0];
-        
+
         std::vector<cl::Device> all_devices;
         default_platform.getDevices(CL_DEVICE_TYPE_GPU, &all_devices);
         if (all_devices.empty()) {
             throw std::runtime_error("No OpenCL GPU devices found.");
         }
         device = all_devices[0];
-        
+
         // Create context and queue
         context = cl::Context({device});
         queue = cl::CommandQueue(context, device);
@@ -126,7 +139,7 @@ public:
         // Compile the kernels
         embeddingProgram = cl::Program(context, embeddingFormulaSource);
         inverseProgram = cl::Program(context, vectorInverseSource);
-        
+
         cl_int err;
         err = embeddingProgram.build({device});
         if (err != CL_SUCCESS) {
@@ -142,6 +155,12 @@ public:
             exit(EXIT_FAILURE);
         }
     }
+
+    // Since this is a singleton, delete copy/move to prevent unintended copies
+    OpenCLContext(const OpenCLContext&) = default;
+    OpenCLContext& operator=(const OpenCLContext&) = default;
+    OpenCLContext(OpenCLContext&&) = default;
+    OpenCLContext& operator=(OpenCLContext&&) = default;
 };
 
 #endif
