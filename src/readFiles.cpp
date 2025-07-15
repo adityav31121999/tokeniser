@@ -164,6 +164,92 @@ std::string readCsvField(std::stringstream& ss) {
     return field; // `removeQuotes` will be called on this string later
 }
 
+// Function to read an entire CSV file into a 2D vector of a specified type T
+// This version uses the provided robust utility functions.
+template <typename T>
+std::vector<std::vector<T>> readCsvTo2DVector(const std::string& filename) {
+    std::vector<std::vector<T>> csvData;
+    std::ifstream file(filename);
+
+    if (!file.is_open()) {
+        std::cerr << "Error: Could not open file " << filename << std::endl;
+        std::cerr << "Check if the file exists and has proper read permissions." << std::endl;
+        return csvData;
+    }
+
+    std::string line;
+    int lineNumber = 0;
+
+    while (std::getline(file, line)) {
+        lineNumber++;
+
+        if (line.empty()) {
+            continue; // Skip truly empty lines
+        }
+
+        // Apply global trim to the entire line
+        line = trim(line);
+
+        if (line.empty()) {
+            continue; // Skip lines that become empty after trimming
+        }
+        
+        // if (lineNumber == 1 && isHeaderLine(line)) {
+        //     std::cout << "Skipping what appears to be a header line: " << line << std::endl;
+        //     continue;
+        // }
+
+        std::vector<T> row;
+        std::stringstream ss(line); // Create a stringstream for the current line
+
+        // Loop to read fields using the robust readCsvField
+        while (true) {
+            std::string raw_field = readCsvField(ss);
+            // Apply trim and removeQuotes to the raw field string before conversion
+            std::string cleaned_field_str = removeQuotes(trim(raw_field));
+
+            T value;
+            std::stringstream converter_ss(cleaned_field_str); // Use a new stringstream for type conversion
+
+            // Attempt to convert the string to the target type T
+            if (!(converter_ss >> value)) {
+                // Conversion failed (e.g., "abc" to int, or a number too large for the type)
+                std::cerr << "Warning: Failed to convert field '" << cleaned_field_str
+                          << "' to target type at line " << lineNumber
+                          << " in file " << filename << ". Defaulting to T()." << std::endl;
+                value = T(); // Default-construct T (e.g., 0 for int/float, empty for string)
+            }
+            row.push_back(value);
+
+            // Check if there are more fields to read in the current line.
+            // readCsvField consumes the comma delimiter. So if ss.peek() is EOF,
+            // or if the stream's failbit/eofbit is set and no more chars, we're done with the line.
+            // The original loop condition `if (ss.eof() && ss.peek() == EOF)` is used for consistency.
+            if (ss.peek() == EOF) { // No more characters remaining in the stream
+                break;
+            }
+        }
+        
+        // Add row only if it's not empty (e.g., not just an empty line that resulted in no fields)
+        if (!row.empty() || line.find(',') != std::string::npos) { // Add row even if empty but it indicates fields (e.g. "a,,c")
+            csvData.push_back(row);
+        }
+    }
+
+    file.close();
+
+    if (csvData.empty()) {
+        std::cerr << "Warning: No data found in file " << filename << std::endl;
+    }
+    else {
+        std::cout << "Successfully read " << csvData.size()
+                  << " rows from file " << filename << std::endl;
+    }
+
+    return csvData;
+}
+
+
 // Function to read a single column CSV into a vector of strings
 std::vector<std::string> readSingleColumnCsv(const std::string& filename) {
     std::vector<std::string> columnData;
@@ -180,13 +266,11 @@ std::vector<std::string> readSingleColumnCsv(const std::string& filename) {
 
     while (std::getline(file, line)) {
         lineNumber++;
-
         if (line.empty()) {
             continue;
         }
 
         line = trim(line); // Trim whitespace from the entire line
-
         if (line.empty()) {
             continue;
         }
@@ -197,10 +281,10 @@ std::vector<std::string> readSingleColumnCsv(const std::string& filename) {
     }
 
     file.close();
-
     if (columnData.empty()) {
         std::cerr << "Warning: No data found in file " << filename << std::endl;
-    } else {
+    }
+    else {
         std::cout << "Successfully read " << columnData.size()
                   << " entries from file " << filename << std::endl;
     }
@@ -302,62 +386,6 @@ std::vector<std::string> readSpecificColumnFromCsv(const std::string& filename, 
     }
 
     return columnData;
-}
-
-// Function to read an entire CSV file into a 2D vector of strings (row by row)
-std::vector<std::vector<std::string>> readCsvTo2DVector(const std::string& filename) {
-    std::vector<std::vector<std::string>> csvData;
-    std::ifstream file(filename);
-
-    if (!file.is_open()) {
-        std::cerr << "Error: Could not open file " << filename << std::endl;
-        std::cerr << "Check if the file exists and has proper read permissions." << std::endl;
-        return csvData;
-    }
-
-    std::string line;
-    int lineNumber = 0;
-
-    while (std::getline(file, line)) {
-        lineNumber++;
-
-        if (line.empty()) {
-            continue;
-        }
-
-        line = trim(line);
-
-        if (line.empty()) {
-            continue;
-        }
-
-        std::vector<std::string> row;
-        std::stringstream ss(line);
-
-        while (true) {
-            std::string raw_field = readCsvField(ss);
-            row.push_back(removeQuotes(trim(raw_field)));
-
-            // Check if there are more fields to read
-            if (ss.eof() && ss.peek() == EOF) {
-                break; // No more characters and stream is at end
-            }
-        }
-        if (!row.empty()) {
-            csvData.push_back(row);
-        }
-    }
-
-    file.close();
-
-    if (csvData.empty()) {
-        std::cerr << "Warning: No data found in file " << filename << std::endl;
-    } else {
-        std::cout << "Successfully read " << csvData.size()
-                  << " rows from file " << filename << std::endl;
-    }
-
-    return csvData;
 }
 
 
@@ -591,12 +619,20 @@ void tokeniser::readFromFiles(const std::string& path2ClassDataFolder) {
     this->statOfTokens = readUnorderedMap(token_stats_file);
 
     // 2. Load the mapped embeddings
-    std::string embeddings_file = path2ClassDataFolder + "/_final_embeddings.csv";
+    std::string tokenembeddings_file = path2ClassDataFolder + "/_tokenEmbedding.csv";
+    std::string embeddings_file = path2ClassDataFolder + "/_embeddings_only.csv";
+    if (!std::filesystem::exists(tokenembeddings_file)) {
+        std::cerr << "Error: Embeddings file not found at " << tokenembeddings_file << std::endl;
+        throw std::runtime_error("Required embeddings file missing. Ensure training created '_tokenEmbedding.csv' in the specified path.");
+    }
+    this->mappedEmbeddings = readMappedEmbeddings(tokenembeddings_file);
+
     if (!std::filesystem::exists(embeddings_file)) {
         std::cerr << "Error: Embeddings file not found at " << embeddings_file << std::endl;
-        throw std::runtime_error("Required embeddings file missing. Ensure training created '_final_embeddings.csv' in the specified path.");
+        throw std::runtime_error("Required embeddings file missing. Ensure training created '_tokenEmbedding.csv' in the specified path.");
     }
-    this->mappedEmbeddings = readMappedEmbeddings(embeddings_file);
+    this->embeddings = std::vector<std::vector<float>>(this->mappedEmbeddings.size(), std::vector<float>(this->mappedEmbeddings.begin()->second.size(), 0.0f));
+    this->embeddings = readCsvTo2DVector<float>(embeddings_file);
 
     // --- CRITICAL STEP: Populate 'this->tokens' from the loaded vocabulary ---
     this->tokens.clear(); // Ensure it's empty before populating
@@ -645,9 +681,11 @@ void tokeniser::readFromFiles(const std::string& path2ClassDataFolder) {
         auto it = this->mappedEmbeddings.find(token_str);
         if (it != this->mappedEmbeddings.end()) {
             this->embeddings.push_back(it->second);
-        } else {
+        }
+        else {
             // This is the warning that's being triggered.
-            std::cerr << "Warning: Token '" << token_str << "' present in vocabulary but missing embedding in '_final_embeddings.csv'. Adding zero vector." << std::endl;
+            std::cerr << "Warning: Token '" << token_str << "' present in vocabulary but missing embedding in '_tokenEmbedding.csv'. Adding zero vector." << std::endl;
+            // use _embeddings_only.csv for reading embeddings of this token by finding out the index of this string
             this->embeddings.push_back(std::vector<float>(this->d, 0.0f)); // Provide a zero vector as a fallback
         }
     }
@@ -663,4 +701,5 @@ void tokeniser::readFromFiles(const std::string& path2ClassDataFolder) {
     std::cout << "  - Tokens loaded: " << this->tokens.size() << std::endl;
     std::cout << "  - Vocabulary size: " << this->vocSize << std::endl;
     std::cout << "  - Embedding dimension: " << this->d << std::endl;
+    // std::cout << "  - deEmbedding dimension: " << this->d << std::endl;
 }

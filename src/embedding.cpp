@@ -27,6 +27,7 @@ std::vector<float> vectorInverse(const std::vector<float> &vec)
     return inverse;
 }
 
+
 /**
  * @brief Generates random seeds and computes embeddings for the current vocabulary.
  * This function populates the internal embedding vectors based on the tokens
@@ -53,17 +54,18 @@ void tokeniser::generateAndSaveEmbeddings(const std::string& embeddingCSVpath, f
         token_to_original_index[this->tokens[i]] = i;
     }
 
+    std::string csvEmbeddingOnly = embeddingCSVpath + "/_embeddings_only.csv";
+    std::string tokenEmbeddingcsv = embeddingCSVpath + "/_tokenEmbedding.csv";
+    // std::string csvDeEmbeddings = embeddingCSVpath + "/_deEmbedding.csv";
     this->embeddings.resize(this->vocSize, std::vector<float>(this->d));
-    // this->deEmbeddings.resize(this->vocSize, std::vector<float>(this->d));
+    // this->deEmbeddings.resize(this->vocSize, std::vector<float>(this->d));   // or multiple of d (m*d)
     
     #ifdef USE_CUDA
         // Call the CUDA kernel wrapper
         cuEmbeddingFormula(this->embeddings, this->seeds, this->d, this->vocSize, r1, r2);
-        // cuVectorInverse(this->deEmbeddings, this->embeddings, this->d, this->vocSize);
     #elif USE_OPENCL
         // Call the OpenCL kernel wrapper
         clEmbeddingFormula(this->ocl, this->embeddings, this->seeds, this->d, this->vocSize, r1, r2);
-        // clVectorInverse(this->ocl, this->deEmbeddings, this->embeddings, this->d, this->vocSize);
     #else
         std::random_device rd;
         std::mt19937 gen(rd());
@@ -86,10 +88,16 @@ void tokeniser::generateAndSaveEmbeddings(const std::string& embeddingCSVpath, f
     #endif
 
     std::cout << "-> Embedding generation complete." << std::endl;
-    std::cout << "-> Saving tokens and embeddings to: " << embeddingCSVpath << std::endl;
-    std::ofstream outFile(embeddingCSVpath);
-    if (!outFile.is_open()) {
-        std::cerr << "Error: Could not open file to save embeddings: " << embeddingCSVpath << std::endl;
+    std::cout << "-> Saving only embeddings to: " << csvEmbeddingOnly << std::endl;
+    std::cout << "-> Saving tokens and embeddings to: " << tokenEmbeddingcsv << std::endl;
+    std::ofstream outFile1(csvEmbeddingOnly);
+    std::ofstream outFile2(tokenEmbeddingcsv);
+    if (!outFile1.is_open()) {
+        std::cerr << "Error: Could not open file to save embeddings: " << csvEmbeddingOnly << std::endl;
+        return;
+    }
+    if (!outFile2.is_open()) {
+        std::cerr << "Error: Could not open file to save tokens and embeddings: " << tokenEmbeddingcsv << std::endl;
         return;
     }
 
@@ -104,13 +112,11 @@ void tokeniser::generateAndSaveEmbeddings(const std::string& embeddingCSVpath, f
         // Write to CSV, handling quoting for tokens
         std::string escaped_token = token;
         // ... (add CSV escaping logic for `escaped_token` if it contains commas or quotes) ...
-        outFile << "\"" << escaped_token << "\""; // Always quote the token field
+        outFile2 << "\"" << escaped_token << "\""; // Always quote the token field
 
-        for (float val : embedding) {
-            outFile << "," << val;
-        }
-        outFile << "\n";
+        for (float val : embedding) { outFile1 << "," << val; } outFile1 << "\n";
+        for (float val : embedding) { outFile2 << "," << val; } outFile2 << "\n";
     }
-    outFile.close();
+    outFile1.close();
     std::cout << "Successfully saved " << this->tokens.size() << " embeddings to " << embeddingCSVpath << std::endl;
 }

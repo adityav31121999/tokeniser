@@ -69,21 +69,6 @@ else()
     add_compile_definitions(USE_CPU)
 endif()
 
-# List common source files for the executable
-set(TOKENISE_SOURCES
-    main.cpp
-    tokenise.cpp
-    embedding.cpp
-    split.cpp
-    corpus.cpp
-    set.cpp
-    group.cpp
-    merge.cpp
-    pairstats.cpp
-    readFiles.cpp
-    train.cpp
-)
-
 # Conditionally add backend-specific source files to the list
 if(USE_CUDA)
     list(APPEND TOKENISE_SOURCES kernel.cu)
@@ -91,9 +76,14 @@ elseif(USE_OPENCL)
     list(APPEND TOKENISE_SOURCES kernelcl.cpp)
 endif()
 
-add_executable(TOKENISE ${TOKENISE_SOURCES})
+add_executable(TOKENISE main.cpp)
+
+add_subdirectory(src)
 
 # Link libraries based on the selected backend
 if(USE_OPENCL)
     target_link_libraries(TOKENISE PRIVATE OpenCL::OpenCL)
 endif()
+
+# Link the executable against the libraries from subdirectories
+target_link_libraries(TOKENISE PRIVATE token)

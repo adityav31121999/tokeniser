@@ -171,7 +171,7 @@ void tokeniser::groupCommonTokens(const std::unordered_map<std::string, int>& co
     }
 
     // 4. FINALIZE VOCABULARY
-    final_vocab.push_back("<@#0>");     // add sentence terminator token "<@#0>"
+    // final_vocab.push_back("<@#0>");     // add sentence terminator token "<@#0>"
     final_vocab.assign(vocab.begin(), vocab.end());
     std::sort(final_vocab.begin(), final_vocab.end(), [](const auto& a, const auto& b){ return a.length() > b.length(); });
 
