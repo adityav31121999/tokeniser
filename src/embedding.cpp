@@ -110,13 +110,12 @@ void tokeniser::generateAndSaveEmbeddings(const std::string& embeddingCSVpath, f
         this->mappedEmbeddings[token] = embedding;
 
         // Write to CSV, handling quoting for tokens
-        std::string escaped_token = token;
-        // ... (add CSV escaping logic for `escaped_token` if it contains commas or quotes) ...
-        outFile2 << "\"" << escaped_token << "\""; // Always quote the token field
+        std::string escaped_token = escapeAndQuoteCsvField(token);
+        outFile2 << escaped_token; // Always use the helper function for the token
 
         for (float val : embedding) { outFile1 << "," << val; } outFile1 << "\n";
         for (float val : embedding) { outFile2 << "," << val; } outFile2 << "\n";
     }
     outFile1.close();
-    std::cout << "Successfully saved " << this->tokens.size() << " embeddings to " << embeddingCSVpath << std::endl;
+    std::cout << "Successfully saved " << this->tokens.size() << " embeddings to " << embeddingCSVpath << " (and token mappings)" << std::endl;
 }

@@ -15,7 +15,7 @@
 #include <algorithm>
 #include <future>
 #include <thread>
-#include <memory> // <--- NEW: For std::unique_ptr
+#include <memory>
 #include <utility> // For std::move
 
 // for fast multithreading operations
@@ -327,7 +327,7 @@ std::string escapeAndQuoteCsvField(const std::string& field);
 bool isHeaderLine(const std::string& line);
 std::vector<std::string> readSingleColumnCsv(const std::string& filename);
 std::vector<std::string> readSpecificColumnFromCsv(const std::string& filename, int targetColumnIndex);
-std::vector<std::vector<std::string>> readCsvTo2DVector(const std::string& filename);
+std::vector<std::vector<float>> readCsvTo2DVector(const std::string& filename);
 std::unordered_map<std::string, int> readUnorderedMap(const std::string& filename);
 std::unordered_map<std::string, std::vector<float>> readMappedEmbeddings(const std::string& filename);
 
