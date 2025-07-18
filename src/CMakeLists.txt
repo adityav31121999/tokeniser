@@ -16,6 +16,7 @@ add_library(token STATIC
     train.cpp
     kernel.cu
     kernelcl.cpp
+    utility.cpp
 )
 
 # Make the include directory available to this target and any
