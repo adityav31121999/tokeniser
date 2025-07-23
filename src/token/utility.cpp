@@ -1,7 +1,14 @@
-#include "include/tokenise.hpp"
 #include <fstream>
 #include <filesystem>
+#include <vector>
+#include <string>
 #include <iostream>
+#include <sstream>
+#include <unordered_map>
+#include <algorithm>
+#include <cctype>
+#include "include/tokenise.hpp"
+
 
 // count lines or rows in file
 long long count_lines(const std::string& filename) {
@@ -108,8 +115,11 @@ bool isHeaderLine(const std::string& line) {
 
     // Common header patterns - checks for typical CSV header combinations
     return (trimmed.find("token") != std::string::npos &&
-           (trimmed.find("count") != std::string::npos || trimmed.find("repetitions") != std::string::npos)) ||
-           (trimmed.find("word") != std::string::npos && trimmed.find("count") != std::string::npos) ||
+            (trimmed.find("count") != std::string::npos ||
+             trimmed.find("repetitions") != std::string::npos)) ||
+           (trimmed.find("word") != std::string::npos &&
+            trimmed.find("count") != std::string::npos) ||
            (trimmed.find("embedding") != std::string::npos) ||
-           (trimmed == "word,count" || trimmed == "token,count" || trimmed == "token,repetitions");
+           (trimmed == "word,count" || trimmed == "token,count" ||
+            trimmed == "token,repetitions");
 }

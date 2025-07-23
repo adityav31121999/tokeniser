@@ -30,4 +30,5 @@ target_link_libraries(token
     PUBLIC # Important: Make OpenCL and CUDA linking public
         ${OpenCL_LIBRARIES}
         ${CUDAToolkit_LIBRARIES}
+    nn
 )

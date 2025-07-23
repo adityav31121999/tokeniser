@@ -78,7 +78,20 @@ endif()
 
 add_executable(TOKENISE main.cpp)
 
-add_subdirectory(src)
+
+# Set all subdirectories as subProjects
+set(subProjects
+    src/nn
+    src/token
+)
+
+# Include each subdirectory
+foreach(projects IN LISTS subProjects)
+    include_directories(${projects})
+    if(NOT TARGET ${projects})
+        add_subdirectory(${projects})
+    endif()
+endforeach()
 
 # Link libraries based on the selected backend
 if(USE_OPENCL)
@@ -86,4 +99,4 @@ if(USE_OPENCL)
 endif()
 
 # Link the executable against the libraries from subdirectories
-target_link_libraries(TOKENISE PRIVATE token)
+target_link_libraries(TOKENISE PRIVATE nn token)

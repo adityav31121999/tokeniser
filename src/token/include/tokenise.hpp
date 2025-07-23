@@ -1,22 +1,22 @@
 #ifndef TOKENISE_HPP
 #define TOKENISE_HPP 1
 
-#include "clcontext.hpp"
+#include <neuralNet.hpp>
 #include <string>
 #include <vector>
 #include <set>
 #include <map>
 #include <unordered_map>
 #include <cmath>
-#include <queue>
-#include <mutex>
-#include <condition_variable>
+#include <queue>                 // For std::queue
+#include <mutex>                 // For std::mutex, std::lock_guard
+#include <condition_variable>    // For std::condition_variable
 #include <regex>
 #include <algorithm>
 #include <future>
 #include <thread>
 #include <memory>
-#include <utility>
+#include <utility> // For std::move
 
 // for fast multithreading operations
 struct PairHash {
@@ -65,13 +65,14 @@ class tokeniser {
 private:
     int d;          // embedding dimension
     int vocSize;    // vocabulary size (number of merges performed while BPE algorithm)
-    int d_val;      // divisor (makes it look like repeatation)
 
     std::string path2data;                          // path to dataset
     std::vector<std::string> tokens;                // all possible tokens
     std::vector<float> seeds;                       // seeds for all tokens (seeds.csv)
     std::vector<std::vector<float>> embeddings;     // vector for each token of dimension d
     std::vector<std::vector<float>> deEmbeddings;   // inverse of each token of dimension d
+    // map of tokens and their embeddings (embeddings.csv)
+    std::unordered_map<std::string, std::vector<float>> mappedEmbeddings;
     std::unordered_map<std::string, int> corpusWordCount;   // NEW (or similar if it's not a member)
     std::unordered_map<std::string, int> statOfTokens;      // hold tokens and their stats (unique_tokens.csv)
 
@@ -89,13 +90,11 @@ public:
     // default constructors
 #ifdef USE_OPENCL
     tokeniser(int d, OpenCLContext& context); // You'd need to initialize bpe_progress here too
-    tokeniser(int d, int d_val, OpenCLContext& context); // And here
     explicit tokeniser(const std::string& path2data, OpenCLContext& context) noexcept; // And here
 #elif USE_CUDA || USE_CPU
     // Initialize bpe_progress in all constructors
     tokeniser() : bpe_progress(std::make_unique<ProgressData>()) {}
     tokeniser(int d);
-    tokeniser(int d, int d_val);
     explicit tokeniser(const std::string& path2data) noexcept;
 #endif
 
@@ -103,12 +102,12 @@ public:
     tokeniser(const tokeniser& other)
         : d(other.d),
           vocSize(other.vocSize),
-          d_val(other.d_val),
           path2data(other.path2data),
           tokens(other.tokens),
           seeds(other.seeds),
           embeddings(other.embeddings),
           deEmbeddings(other.deEmbeddings),
+          mappedEmbeddings(other.mappedEmbeddings),
           corpusWordCount(other.corpusWordCount),
           statOfTokens(other.statOfTokens),
           num_threads(other.num_threads),
@@ -123,12 +122,12 @@ public:
     tokeniser(tokeniser&& other) noexcept
         : d(other.d),
           vocSize(other.vocSize),
-          d_val(other.d_val),
           path2data(std::move(other.path2data)),
           tokens(std::move(other.tokens)),
           seeds(std::move(other.seeds)),
           embeddings(std::move(other.embeddings)),
           deEmbeddings(std::move(other.deEmbeddings)),
+          mappedEmbeddings(std::move(other.mappedEmbeddings)),
           corpusWordCount(std::move(other.corpusWordCount)),
           statOfTokens(std::move(other.statOfTokens)),
           num_threads(other.num_threads),
@@ -147,12 +146,12 @@ public:
 
         d = other.d;
         vocSize = other.vocSize;
-        d_val = other.d_val;
         path2data = other.path2data;
         tokens = other.tokens;
         seeds = other.seeds;
         embeddings = other.embeddings;
         deEmbeddings = other.deEmbeddings;
+        mappedEmbeddings = other.mappedEmbeddings;
         corpusWordCount = other.corpusWordCount;
         statOfTokens = other.statOfTokens;
         num_threads = other.num_threads;
@@ -173,12 +172,12 @@ public:
 
         d = other.d;
         vocSize = other.vocSize;
-        d_val = other.d_val;
         path2data = std::move(other.path2data);
         tokens = std::move(other.tokens);
         seeds = std::move(other.seeds);
         embeddings = std::move(other.embeddings);
         deEmbeddings = std::move(other.deEmbeddings);
+        mappedEmbeddings = std::move(other.mappedEmbeddings);
         corpusWordCount = std::move(other.corpusWordCount);
         statOfTokens = std::move(other.statOfTokens);
         num_threads = other.num_threads;
@@ -193,32 +192,30 @@ public:
 
         other.d = 0;
         other.vocSize = 0;
-        other.d_val = 0;
         other.num_threads = 0;
         other.totalCorpusWordCount = 0;
         return *this;
     }
 
+
     // programs for setting values
     void setEmbeddingDimension(int d);
-    void setDval(int d_val);
     void setVocabularySize(int vocSize);
     void setNumThreads();
     void setEmbedding(const std::string& token, std::vector<float> embedding);
     void readFromFiles(const std::string& path2ClassDataFolder);
-    void setStats(const std::unordered_map<std::string, int>& stats) { statOfTokens = stats; }
 
     // Getters for read-only access to internal state
     int getEmbeddingDimension() const { return d; }
-    int getDval() const { return d_val; }
     int getVocabularySize() const { return vocSize; }
-    const std::unordered_map<std::string, int> getTokenStats() const { return statOfTokens; }
-    // const std::unordered_map<std::string, std::vector<float>>& getMappedEmbeddings() const { return mappedEmbeddings; }
-    std::vector<float> getEmbeddingForToken(int index) const { return embeddings[index]; };
-    std::vector<float> getEmbeddingForToken(const std::string& token) const;
+    const std::unordered_map<std::string, int>& getTokenStats() const { return statOfTokens; }
     const std::vector<std::string>& getTokens() const { return tokens; }
+    const std::unordered_map<std::string, std::vector<float>>& getMappedEmbeddings() const { return mappedEmbeddings; }
+    const std::vector<float>& getSeeds() const { return seeds; }
     const std::vector<std::vector<float>>& getEmbeddings() const { return embeddings; }
     const std::vector<std::vector<float>>& getDeEmbeddings() const { return deEmbeddings; }
+    std::vector<float> getEmbeddingForToken(int index) const { return embeddings[index]; };
+    std::vector<float> getEmbeddingForToken(const std::string& token) const;
 
     void splitWord(const std::string& word, std::vector<std::string>& subwords) const;
     void splitSentence(const std::string& sentence, std::vector<std::string>& all_subwords) const;
@@ -228,10 +225,10 @@ public:
     void saveUniqueTokensToCSV(const std::unordered_map<std::string, int>& corpus_word_counts, const std::string& outputPath);
     void calculateTokenStatsFromCounts(const std::unordered_map<std::string, int>& corpus_word_counts, const std::string& outputPath);
     void calculateTokenStats(const std::vector<std::string>& pre_tokens, const std::string& outputPath);
-    void generateAndSaveEmbeddings(const std::string& outputPath, float r1, float r2);
+    void generateAndSaveEmbeddings(const std::string& outputPath, float r1);
 
     #ifdef USE_CUDA
-        void cuEmbeddingFormula(std::vector<std::vector<float>>& embedding, const std::vector<float>& seeds, int& d_dim, int& vocSize, float r1, float r2);
+        void cuEmbeddingFormula(std::vector<std::vector<float>>& embedding, const std::vector<float>& seeds, int& d, int& vocSize);
         void cuVectorInverse(std::vector<std::vector<float>>& deEmbedding, const std::vector<std::vector<float>>& embedding, int& d, int& vocSize);
     #elif USE_OPENCL
         void clEmbeddingFormula(OpenCLContext& ocl_context, std::vector<std::vector<float>>& embedding, const std::vector<float>& seeds_ignored, int& d_dim, int& vocSize_val, float r1, float r2);

@@ -26,9 +26,8 @@ int main()
     const std::string path2tokenData;
 
     try {
-        const int embeddingDimension = 64;      // embedding dimension
-        const int d_val = 4;                    // Your original divisor for the formula
-        const int num_merges = 32768;           // = 2^n and its multiples (24576 = 8192 * 3)
+        const int embeddingDimension = 128;     // embedding dimension
+        const int num_merges = 12288;           // = 2^n and its multiples (12288 = 4096 * 3)
         const std::string path2folder = "D:/train/txt";
         // paths to all csv files
         const std::string path2token = "D:/train/token";
@@ -37,17 +36,16 @@ int main()
 
         // Create and configure the tokenizer instance
     #ifdef USE_OPENCL
-        tokeniser TOKENISER(embeddingDimension, d_val, ocl);
+        tokeniser TOKENISER(embeddingDimension, ocl);
     #elif USE_CUDA || USE_CPU
-        tokeniser TOKENISER(path2token);
+        tokeniser TOKENISER(embeddingDimension);
     #endif
 
-/*
         TOKENISER.setNumThreads(); // Automatically set to use max threads
         std::cout << "-> Number of threads for CPU: " << TOKENISER.num_threads << std::endl;
+        TOKENISER.setEmbeddingDimension(embeddingDimension);
 
         std::cout << "------------------------ 1. AGGREGATING DATA --------------------------" << std::endl;
-
         // Step A: Collect all file paths
         std::vector<std::string> all_file_paths;
         for (const auto& entry : std::filesystem::directory_iterator(path2folder)) {
@@ -78,11 +76,10 @@ int main()
         std::cout << "-> " << std::filesystem::path(stats_output_path).filename().string() << " contains " << count_lines(stats_output_path) << " rows." << std::endl;
 
         // Step B: Generate embeddings using original formula
-        TOKENISER.generateAndSaveEmbeddings(path2token, -10.0f, 10.0f);
+        TOKENISER.generateAndSaveEmbeddings(path2token,10.0f);
         std::cout << "-> " << std::filesystem::path(stats_output_path).filename().string() << " contains " << count_lines(stats_output_path) << " rows." << std::endl;
-        std::cout << "-> " << std::filesystem::path(path2token + "/_tokenEmbedding.csv").filename().string() << " contains " << count_lines(path2token + "/_final_embeddings.csv") << " rows." << std::endl;
+        // std::cout << "-> " << std::filesystem::path(path2token + "/_tokenEmbedding.csv").filename().string() << " contains " << count_lines(path2token + "/_final_embeddings.csv") << " rows." << std::endl;
 
-*/
         std::cout << "-------------------------- 4. INFERENCE DEMO --------------------------" << std::endl;
         std::string test_sentence = "This is a test sentence for christianity and its international relationships to see the new tokenizer in action. Hence, need more words to see whether it will work or not, if not rework the code logic and try again. This tokeniser is (BPE) is supercalifragilisticexpialidocious at the ludicrous speed. Ludicrous speed can be given by higher multiple of light speed which is 2.9 * 10^8 m/s.";
         std::vector<std::string> tokenized_sentence;
