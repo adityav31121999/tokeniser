@@ -61,28 +61,22 @@ void tokeniser::generateAndSaveEmbeddings(const std::string& embeddingCSVpath, f
     
     #ifdef USE_CUDA
         // Call the CUDA kernel wrapper
-        cuEmbeddingFormula(this->embeddings, this->seeds, this->d, this->vocSize, r1, r2);
+        cuEmbeddingFormula(this->embeddings, this->seeds, this->d, this->vocSize, r1);
     #elif USE_OPENCL
         // Call the OpenCL kernel wrapper
-        clEmbeddingFormula(this->ocl, this->embeddings, this->seeds, this->d, this->vocSize, r1, r2);
+        clEmbeddingFormula(this->ocl, this->embeddings, this->seeds, this->d, this->vocSize, r1);
     #else
         std::random_device rd;
         std::mt19937 gen(rd());
         // std::uniform_real_distribution<float> dis(r1, r2);
         std::poisson_distribution<int> dis(r1);
-
-        // Ensure the embeddings vector is correctly sized before populating
-        // This is a crucial step if embeddings is not pre-sized in a constructor.
         this->embeddings.resize(this->vocSize);
+        // resizinig of each row and assigning embeddings
         for (int i = 0; i < this->vocSize; ++i) {
             this->embeddings[i].resize(this->d);
-        }
-
-        // Fallback to CPU implementation
-        for (int i = 0; i < this->vocSize; ++i) {
-            // Note: `i` here corresponds to the index in the original `this->tokens` list
             for (int j = 0; j < this->d; ++j) {
-                this->embeddings[i][j] = dis(gen) + std::pow(-1, i + j)*(std::sin(i) + std::cos(j));
+                // random number * (-1)^(i+j) * (sin(i+1) + cos(j-1))
+                this->embeddings[i][j] = dis(gen) * (std::sin(i+1) + std::cos(j-1)) * 0.1 + 0.01;
             }
         }
     #endif
@@ -105,17 +99,16 @@ void tokeniser::generateAndSaveEmbeddings(const std::string& embeddingCSVpath, f
     for (size_t i = 0; i < this->vocSize; ++i) {
         const std::string& token = this->tokens[i];
         std::vector<float> embedding = embeddings[i];
-
         // Store in mappedEmbeddings for later use (optional, but good practice)
+        // outfile2 << mappedEmbeddings->first() << ",";
         this->mappedEmbeddings[token] = embedding;
-
         // Write to CSV, handling quoting for tokens
         std::string escaped_token = escapeAndQuoteCsvField(token);
         // outFile2 << escaped_token; // Always use the helper function for the token
-
         for (float val : embedding) { outFile1 << val << ","; } outFile1 << "\n";
         // for (float val : embedding) { outFile2 << val << ","; } outFile2 << "\n";
     }
     outFile1.close();
-    std::cout << "Successfully saved " << this->tokens.size() << " embeddings to " << embeddingCSVpath << " (and token mappings)" << std::endl;
+    std::cout << "Successfully saved " << this->tokens.size() << " embeddings to " 
+              << embeddingCSVpath << " (and token mappings)" << std::endl;
 }

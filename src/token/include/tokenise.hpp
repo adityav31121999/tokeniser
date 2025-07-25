@@ -42,6 +42,7 @@ struct ProgressData {
     std::string last_file_completed;
     int merges_completed = 0;
     int total_merges = 0;
+    unsigned long long sentence_terminator_count = 0;
     std::chrono::steady_clock::time_point start_time;
 
     // Explicitly delete copy constructor and assignment operator
@@ -65,6 +66,7 @@ class tokeniser {
 private:
     int d;          // embedding dimension
     int vocSize;    // vocabulary size (number of merges performed while BPE algorithm)
+    unsigned long long sentence_terminator_count;
 
     std::string path2data;                          // path to dataset
     std::vector<std::string> tokens;                // all possible tokens
@@ -228,7 +230,7 @@ public:
     void generateAndSaveEmbeddings(const std::string& outputPath, float r1);
 
     #ifdef USE_CUDA
-        void cuEmbeddingFormula(std::vector<std::vector<float>>& embedding, const std::vector<float>& seeds, int& d, int& vocSize);
+        void cuEmbeddingFormula(std::vector<std::vector<float>>& embedding, const std::vector<float>& seeds, int& d, int& vocSize, float r1);
         void cuVectorInverse(std::vector<std::vector<float>>& deEmbedding, const std::vector<std::vector<float>>& embedding, int& d, int& vocSize);
     #elif USE_OPENCL
         void clEmbeddingFormula(OpenCLContext& ocl_context, std::vector<std::vector<float>>& embedding, const std::vector<float>& seeds_ignored, int& d_dim, int& vocSize_val, float r1, float r2);

@@ -76,7 +76,7 @@ int main()
         std::cout << "-> " << std::filesystem::path(stats_output_path).filename().string() << " contains " << count_lines(stats_output_path) << " rows." << std::endl;
 
         // Step B: Generate embeddings using original formula
-        TOKENISER.generateAndSaveEmbeddings(path2token,10.0f);
+        TOKENISER.generateAndSaveEmbeddings(path2token, 1.05f);
         std::cout << "-> " << std::filesystem::path(stats_output_path).filename().string() << " contains " << count_lines(stats_output_path) << " rows." << std::endl;
         // std::cout << "-> " << std::filesystem::path(path2token + "/_tokenEmbedding.csv").filename().string() << " contains " << count_lines(path2token + "/_final_embeddings.csv") << " rows." << std::endl;
 

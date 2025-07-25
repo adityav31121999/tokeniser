@@ -114,7 +114,6 @@ void tokeniser::calculateTokenStatsFromCounts(const std::unordered_map<std::stri
     }
     // ******************************************************************************
 
-
     if (!outputPath.empty()) {
         std::cout << "-> Sorting and saving token statistics to: " << outputPath << std::endl;
 

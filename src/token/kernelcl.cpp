@@ -4,7 +4,7 @@
 
 // host side function for embeddings
 void tokeniser::clEmbeddingFormula(OpenCLContext& ocl_context, std::vector<std::vector<float>>& embedding, const std::vector<float>& seeds_ignored, int& d_dim, 
-    int& vocSize_val, float r1, float r2) 
+    int& vocSize_val, float r1) 
 {
     if (!ocl_context.context() || !ocl_context.queue()) { // Use () for cl.hpp accessors
         std::cerr << "OpenCL context or command queue not initialized via singleton." << std::endl;
@@ -13,20 +13,16 @@ void tokeniser::clEmbeddingFormula(OpenCLContext& ocl_context, std::vector<std::
 
     // Resize embedding vector to hold the results
     embedding.resize(vocSize_val, std::vector<float>(d_dim));
-
     // Calculate total number of elements
     size_t total_elements = (size_t)vocSize_val * d_dim;
     if (total_elements == 0) return;
-
     cl_int err;
 
     // Create a flat array for host memory, then copy back to 2D vector
     std::vector<float> flat_embeddings(total_elements);
-
     // Create device buffer
     cl::Buffer embeddings_buffer(ocl_context.context, CL_MEM_WRITE_ONLY, sizeof(float) * total_elements, NULL, &err);
     CHECK_CL(err);
-
     // Create kernel object
     cl::Kernel kernel(ocl_context.embeddingProgram, "generate_embeddings", &err);
     CHECK_CL(err);
@@ -34,11 +30,9 @@ void tokeniser::clEmbeddingFormula(OpenCLContext& ocl_context, std::vector<std::
     // Set Kernel Arguments
     kernel.setArg(0, embeddings_buffer);
     kernel.setArg(1, d_dim);
-    kernel.setArg(2, r1); // <--- Using the passed r1
-    kernel.setArg(3, r2); // <--- Using the passed r2
+    kernel.setArg(2, r1);
     unsigned int initial_seed_offset = static_cast<unsigned int>(std::chrono::high_resolution_clock::now().time_since_epoch().count());
     kernel.setArg(4, initial_seed_offset);
-
 
     // Execute Kernel
     cl::NDRange global_work_size(total_elements);
@@ -46,7 +40,6 @@ void tokeniser::clEmbeddingFormula(OpenCLContext& ocl_context, std::vector<std::
 
     err = ocl_context.queue.enqueueNDRangeKernel(kernel, cl::NullRange, global_work_size, local_work_size);
     CHECK_CL(err);
-
     // Read Results Back
     err = ocl_context.queue.enqueueReadBuffer(embeddings_buffer, CL_TRUE, 0,
                                               sizeof(float) * total_elements, flat_embeddings.data());
@@ -62,7 +55,9 @@ void tokeniser::clEmbeddingFormula(OpenCLContext& ocl_context, std::vector<std::
 }
 
 // The clVectorInverse function would follow a similar pattern, using inverseProgram
-void tokeniser::clVectorInverse(OpenCLContext& ocl_context, std::vector<std::vector<float>>& deEmbedding, const std::vector<std::vector<float>>& embedding, int& d_dim, int& vocSize_val) {
+void tokeniser::clVectorInverse(OpenCLContext& ocl_context, std::vector<std::vector<float>>& deEmbedding, \
+    const std::vector<std::vector<float>>& embedding, int& d_dim, int& vocSize_val) 
+{
     if (!ocl_context.context() || !ocl_context.queue()) {
         std::cerr << "OpenCL context or command queue not initialized via singleton." << std::endl;
         return;

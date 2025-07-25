@@ -73,8 +73,8 @@ void tokeniser::groupCommonTokens(const std::unordered_map<std::string, int>& co
         chars.push_back("</w>"); // Add the essential end-of-word token
         splits[word] = std::move(chars);
     }
-    vocab.insert("</w>"); // Ensure end-of-word token is in the vocab
-
+    vocab.insert("</w>");       // Ensure end-of-word token in the vocab
+    vocab.insert("</s>");       // Ensure end-of-sentence token in the vocab
     {
         for(auto& token : vocab) {
             std::cout << token << " ";
@@ -171,7 +171,7 @@ void tokeniser::groupCommonTokens(const std::unordered_map<std::string, int>& co
     }
 
     // 4. FINALIZE VOCABULARY
-    // final_vocab.push_back("<@#0>");     // add sentence terminator token "<@#0>"
+    // final_vocab.push_back("</s>");     // add sentence terminator token "</s>"
     final_vocab.assign(vocab.begin(), vocab.end());
     std::sort(final_vocab.begin(), final_vocab.end(), [](const auto& a, const auto& b){ return a.length() > b.length(); });
 

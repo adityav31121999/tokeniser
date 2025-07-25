@@ -10,7 +10,6 @@
 #include <algorithm>
 #include <future>
 #include <string_view>
-#include <set>
 #include <cctype>
 #include <chrono>
 #include <filesystem>
@@ -21,7 +20,6 @@
 // Create a global mutex and progress map for debugging.
 std::mutex progress_mutex;
 std::map<std::string, int> progress_map;
-
 
 /**
  * @brief The main entry point for learning a BPE vocabulary.
@@ -43,16 +41,9 @@ void tokeniser::learn_vocabulary_from_word_counts(const std::unordered_map<std::
 }
 
 
-/**
- * @brief Builds word counts with progress reporting tied to file completion.
- * This version uses the producer-consumer model and an event-driven logging
- * system. The main thread waits on a condition variable and prints a progress
- * update only when the producer thread signals that it has finished processing a file.
- * This function is now fully optimized for std::unordered_map for corpus_word_counts.
- * The final aggregation step is now parallelized using a merge tree.
- * @param file_paths A vector of paths to the text files.
- * @param corpus_word_counts Output map to be filled with unique tokens and their total counts.
- */
+// corpus.cpp
+// ... (inside tokeniser::buildCorpusWordCounts)
+
 void tokeniser::buildCorpusWordCounts(const std::vector<std::string>& file_paths, 
     std::unordered_map<std::string, int>& corpus_word_counts)
 {
@@ -64,30 +55,45 @@ void tokeniser::buildCorpusWordCounts(const std::vector<std::string>& file_paths
     int num_producers = (this->num_threads <= 4) ? 1 : 2; // Original logic for producers
     int num_consumers = this->num_threads - num_producers;
     // Ensure at least one consumer if possible, otherwise prioritize producer for small thread counts
-    if (num_consumers < 1 && this->num_threads >= 1) { // If num_threads is 1, producer=1, consumer=0, adjust
+    if (num_consumers < 1 && this->num_threads >= 1) { 
+        // If num_threads is 1, producer=1, consumer=0, adjust
         num_consumers = 1;
         num_producers = this->num_threads - num_consumers; // Adjust producer count if consumers need a thread
         if (num_producers < 1) num_producers = 1; // Ensure at least one producer too
-    } else if (num_consumers < 1) { // Fallback if num_threads is weird, ensure minimum 1 producer, 1 consumer
+    }
+    else if (num_consumers < 1) { // Fallback if num_threads is weird, ensure minimum 1 producer, 1 consumer
         num_producers = 1;
         num_consumers = 1;
     }
 
-    ProgressData progress;
+    // Use the member bpe_progress for shared progress
+    // ProgressData progress; // NO LONGER LOCAL
+    this->bpe_progress->total_bytes = 0; // Reset for a new run
+    this->bpe_progress->bytes_read = 0;
+    this->bpe_progress->files_completed_count = 0;
+    this->bpe_progress->last_file_completed = "";
+    this->bpe_progress->merges_completed = 0;
+    this->bpe_progress->total_merges = 0;
+    this->bpe_progress->sentence_terminator_count = 0; // Initialize the new counter
 
     // 1. PRE-COMPUTATION
     for (const auto& path : file_paths) {
         if (std::filesystem::exists(path)) {
-            progress.total_bytes += std::filesystem::file_size(path);
+            this->bpe_progress->total_bytes += std::filesystem::file_size(path);
         }
     }
-
     // 2. DEFINE THE CONSUMER'S JOB (Optimized with std::string_view)
-    auto consumer_task = [&work_queue]() -> std::unordered_map<std::string, int> {
+    auto consumer_task = [&work_queue, bpe_progress_ptr = this->bpe_progress.get()]() -> std::unordered_map<std::string, int> { // Capture raw pointer
         std::unordered_map<std::string, int> local_counts;
         std::vector<std::string> chunk;
         while (work_queue.wait_and_pop(chunk)) {
             for (const auto& line_str : chunk) {
+                // Increment sentence terminator count for each processed line
+                {
+                    std::lock_guard<std::mutex> lock(bpe_progress_ptr->mtx);
+                    bpe_progress_ptr->sentence_terminator_count++;
+                }
+
                 std::string_view line(line_str);
                 for (size_t i = 0; i < line.length(); ) {
                     unsigned char current_char = line[i];
@@ -113,6 +119,8 @@ void tokeniser::buildCorpusWordCounts(const std::vector<std::string>& file_paths
                     } 
                     else { i++; }
                 }
+                // Add the </s> token to the local_counts for each line
+                local_counts["</s>"]++; 
             }
         }
         return local_counts;
@@ -155,7 +163,7 @@ void tokeniser::buildCorpusWordCounts(const std::vector<std::string>& file_paths
         }
         current_file_idx = end_idx; // Update for next producer
 
-        producer_futures.push_back(std::async(std::launch::async, [&, producer_file_subset = std::move(producer_file_subset)]() mutable {
+        producer_futures.push_back(std::async(std::launch::async, [&, producer_file_subset = std::move(producer_file_subset), bpe_progress_ptr = this->bpe_progress.get()]() mutable {
             for (const auto& path : producer_file_subset) {
                 std::string filename = std::filesystem::path(path).filename().string();
                 std::ifstream file(path);
@@ -163,10 +171,10 @@ void tokeniser::buildCorpusWordCounts(const std::vector<std::string>& file_paths
                     std::cerr << "Warning: Producer thread could not open file: " << path << std::endl;
                     {
                         // Protect progress updates with mutex
-                        std::unique_lock<std::mutex> lock(progress.mtx);
-                        progress.files_completed_count++;
-                        progress.last_file_completed = filename + " (Error)";
-                        progress.cv.notify_one();
+                        std::unique_lock<std::mutex> lock(bpe_progress_ptr->mtx);
+                        bpe_progress_ptr->files_completed_count++;
+                        bpe_progress_ptr->last_file_completed = filename + " (Error)";
+                        bpe_progress_ptr->cv.notify_one();
                     }
                     continue;
                 }
@@ -184,8 +192,8 @@ void tokeniser::buildCorpusWordCounts(const std::vector<std::string>& file_paths
                         last_pos = current_pos;
 
                         {
-                            std::lock_guard<std::mutex> lock(progress.mtx);
-                            progress.bytes_read += bytes_in_chunk;
+                            std::lock_guard<std::mutex> lock(bpe_progress_ptr->mtx);
+                            bpe_progress_ptr->bytes_read += bytes_in_chunk;
                         }
                         
                         work_queue.push(std::move(chunk_buffer));
@@ -206,11 +214,11 @@ void tokeniser::buildCorpusWordCounts(const std::vector<std::string>& file_paths
 
                 // ATOMIC UPDATE AND SIGNAL for progress
                 {
-                    std::unique_lock<std::mutex> lock(progress.mtx);
-                    progress.bytes_read += final_bytes;
-                    progress.files_completed_count++;
-                    progress.last_file_completed = filename; // This will be overwritten by concurrent producers.
-                    progress.cv.notify_one();
+                    std::unique_lock<std::mutex> lock(bpe_progress_ptr->mtx);
+                    bpe_progress_ptr->bytes_read += final_bytes;
+                    bpe_progress_ptr->files_completed_count++;
+                    bpe_progress_ptr->last_file_completed = filename; // This will be overwritten by concurrent producers.
+                    bpe_progress_ptr->cv.notify_one();
                 }
                 file.close();
             }
@@ -219,25 +227,26 @@ void tokeniser::buildCorpusWordCounts(const std::vector<std::string>& file_paths
 
     // 4. MAIN THREAD EVENT-DRIVEN LOGGING LOOP
     {
-        std::unique_lock<std::mutex> lock(progress.mtx);
+        std::unique_lock<std::mutex> lock(this->bpe_progress->mtx);
         // size_t total_files = file_paths.size(); // Already calculated above
         size_t last_reported_count = 0;
 
         while (last_reported_count < total_files) {
-            progress.cv.wait(lock, [&] {
-                return progress.files_completed_count > last_reported_count;
+            this->bpe_progress->cv.wait(lock, [&] {
+                return this->bpe_progress->files_completed_count > last_reported_count;
             });
 
             double percentage = 0.0;
-            if (progress.total_bytes > 0) {
-                percentage = static_cast<double>(progress.bytes_read) / progress.total_bytes * 100.0;
+            if (this->bpe_progress->total_bytes > 0) {
+                percentage = static_cast<double>(this->bpe_progress->bytes_read) / this->bpe_progress->total_bytes * 100.0;
             }
 
             std::cout << "  -> Progress: [" << std::fixed << std::setprecision(4) << percentage << "%] "
-                      << "\t| Completed " << progress.files_completed_count << "/" << total_files << " files. "
-                      << "\t(Finished '" << progress.last_file_completed << "')" << std::endl;
+                      << "\t| Completed " << this->bpe_progress->files_completed_count << "/" << total_files << " files. "
+                      << "\t| Sentences: " << this->bpe_progress->sentence_terminator_count // Display sentence count
+                      << "\t(Finished '" << this->bpe_progress->last_file_completed << "')" << std::endl;
 
-            last_reported_count = progress.files_completed_count;
+            last_reported_count = this->bpe_progress->files_completed_count;
         }
     }
     std::cout << "-> Producer(s) have finished reading all files. Waiting for consumers...\n";
@@ -263,4 +272,6 @@ void tokeniser::buildCorpusWordCounts(const std::vector<std::string>& file_paths
     corpus_word_counts.clear();
     corpus_word_counts.insert(final_counts.begin(), final_counts.end());
     std::cout << "-> Aggregation complete. Total unique tokens: " << corpus_word_counts.size() << std::endl;
+    // You can also print the final sentence terminator count here
+    std::cout << "-> Total </s> tokens counted: " << this->bpe_progress->sentence_terminator_count << std::endl;
 }
